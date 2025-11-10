@@ -1,0 +1,176 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: InvoiceMe WebSocket API with alexHo prefix - Real-time invoice updates
+Parameters:
+  WebSocketApiName:
+    Type: String
+    Default: alexHoInvoiceWebSocket
+    Description: Name of the WebSocket API
+  ConnectionsTableName:
+    Type: String
+    Default: alexHoWebSocketConnections
+    Description: DynamoDB table name for storing WebSocket connections
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        CONNECTIONS_TABLE:
+          Ref: ConnectionsTable
+        WEBSOCKET_API_ENDPOINT:
+          Fn::Sub: ${AlexHoWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${AlexHoWebSocketApiStage}
+Resources:
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:
+        Ref: ConnectionsTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+      - AttributeName: connectionId
+        AttributeType: S
+      KeySchema:
+      - AttributeName: connectionId
+        KeyType: HASH
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: ttl
+  AlexHoWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name:
+        Ref: WebSocketApiName
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+      Description: WebSocket API for real-time invoice updates
+  AlexHoWebSocketApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        Ref: AlexHoWebSocketApi
+      StageName: production
+      AutoDeploy: true
+  AlexHoWebSocketConnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: alexHoWebSocketConnect
+      CodeUri: AlexHoWebSocketConnectFunction
+      Handler: alexHoWebSocketConnect.handler
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: ConnectionsTable
+      Events:
+        Connect:
+          Type: WebSocket
+          Properties:
+            Api:
+              Ref: AlexHoWebSocketApi
+            Route: $connect
+    Metadata:
+      SamResourceId: AlexHoWebSocketConnectFunction
+  AlexHoWebSocketDisconnectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: alexHoWebSocketDisconnect
+      CodeUri: AlexHoWebSocketDisconnectFunction
+      Handler: alexHoWebSocketDisconnect.handler
+      Policies:
+      - DynamoDBCrudPolicy:
+          TableName:
+            Ref: ConnectionsTable
+      Events:
+        Disconnect:
+          Type: WebSocket
+          Properties:
+            Api:
+              Ref: AlexHoWebSocketApi
+            Route: $disconnect
+    Metadata:
+      SamResourceId: AlexHoWebSocketDisconnectFunction
+  AlexHoWebSocketDefaultFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: alexHoWebSocketDefault
+      CodeUri: AlexHoWebSocketDefaultFunction
+      Handler: alexHoWebSocketDefault.handler
+      Events:
+        Default:
+          Type: WebSocket
+          Properties:
+            Api:
+              Ref: AlexHoWebSocketApi
+            Route: $default
+    Metadata:
+      SamResourceId: AlexHoWebSocketDefaultFunction
+  AlexHoSendInvoiceUpdateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: alexHoSendInvoiceUpdate
+      CodeUri: AlexHoSendInvoiceUpdateFunction
+      Handler: alexHoSendInvoiceUpdate.handler
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: ConnectionsTable
+      - Statement:
+        - Effect: Allow
+          Action:
+          - execute-api:ManageConnections
+          Resource:
+            Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${AlexHoWebSocketApi}/*
+    Metadata:
+      SamResourceId: AlexHoSendInvoiceUpdateFunction
+  AlexHoInvoiceEventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: alexHoInvoiceEvents
+      DisplayName: Invoice Events Topic
+  AlexHoInvoiceEventsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn:
+        Ref: AlexHoInvoiceEventsTopic
+      Protocol: lambda
+      Endpoint:
+        Fn::GetAtt:
+        - AlexHoSendInvoiceUpdateFunction
+        - Arn
+  AlexHoSendInvoiceUpdateInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName:
+        Ref: AlexHoSendInvoiceUpdateFunction
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn:
+        Ref: AlexHoInvoiceEventsTopic
+Outputs:
+  WebSocketApiEndpoint:
+    Description: WebSocket API endpoint URL
+    Value:
+      Fn::Sub: wss://${AlexHoWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${AlexHoWebSocketApiStage}
+    Export:
+      Name: alexHoWebSocketApiEndpoint
+  WebSocketApiId:
+    Description: WebSocket API ID
+    Value:
+      Ref: AlexHoWebSocketApi
+    Export:
+      Name: alexHoWebSocketApiId
+  InvoiceEventsTopicArn:
+    Description: SNS Topic ARN for invoice events
+    Value:
+      Ref: AlexHoInvoiceEventsTopic
+    Export:
+      Name: alexHoInvoiceEventsTopicArn
+  SendInvoiceUpdateFunctionArn:
+    Description: Lambda function ARN for sending invoice updates
+    Value:
+      Fn::GetAtt:
+      - AlexHoSendInvoiceUpdateFunction
+      - Arn
+    Export:
+      Name: alexHoSendInvoiceUpdateFunctionArn

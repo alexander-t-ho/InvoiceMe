@@ -1,0 +1,16 @@
+{
+  "name": "alexho-websocket-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda functions for InvoiceMe WebSocket API with alexHo prefix",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "sam build && sam deploy --guided"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1400.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  }
+}
+
