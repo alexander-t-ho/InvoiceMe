@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useInvoices, useMarkInvoiceAsSent } from "@/hooks/useInvoices";
 import { Button } from "@/components/ui/button";
+import { prefetchRouteData } from "@/lib/prefetch-enhanced";
 import {
   Table,
   TableBody,
@@ -15,6 +17,8 @@ import {
 } from "@/components/ui/table";
 import { InvoiceStatusBadge } from "@/components/invoices/invoice-status-badge";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { TableSkeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Plus, Send } from "lucide-react";
 import {
@@ -34,6 +38,7 @@ function formatDate(dateString: string): string {
 }
 
 export default function InvoicesPage() {
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | undefined>();
   const { toast } = useToast();
@@ -56,17 +61,8 @@ export default function InvoicesPage() {
     });
   };
 
-  if (isLoading) {
-    return (
-      <ProtectedRoute>
-        <MainLayout>
-        <div className="flex items-center justify-center py-12">
-          <LoadingSpinner size="lg" />
-        </div>
-      </MainLayout>
-      </ProtectedRoute>
-    );
-  }
+  // Optimistic rendering - show page structure immediately
+  const showFullLoading = isLoading && !data;
 
   if (error) {
     return (
@@ -85,6 +81,26 @@ export default function InvoicesPage() {
     );
   }
 
+  if (showFullLoading) {
+    return (
+      <ProtectedRoute>
+        <MainLayout>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">Invoices</h1>
+                <p className="text-muted-foreground">
+                  Manage your invoices
+                </p>
+              </div>
+            </div>
+            <TableSkeleton rows={10} cols={6} />
+          </div>
+        </MainLayout>
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <MainLayout>
@@ -96,13 +112,20 @@ export default function InvoicesPage() {
               Manage your invoices
             </p>
           </div>
-          <Link href="/invoices/new">
+          <Link href="/invoices/new" prefetch={true}>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
               New Invoice
             </Button>
           </Link>
         </div>
+
+        {isLoading && (
+          <div className="flex items-center justify-center py-4">
+            <LoadingSpinner size="sm" />
+            <span className="ml-2 text-sm text-muted-foreground">Loading invoices...</span>
+          </div>
+        )}
 
         <div className="flex items-center space-x-4">
           <Select
@@ -126,65 +149,81 @@ export default function InvoicesPage() {
 
         {data && data.content.length > 0 ? (
           <>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Issue Date</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.content.map((invoice) => (
-                    <TableRow key={invoice.id}>
-                      <TableCell className="font-medium">
-                        {invoice.customerName}
-                      </TableCell>
-                      <TableCell>
-                        <InvoiceStatusBadge status={invoice.status} />
-                      </TableCell>
-                      <TableCell>
-                        {formatDate(invoice.issueDate)}
-                      </TableCell>
-                      <TableCell>
-                        {formatDate(invoice.dueDate)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        ${invoice.totalAmount.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        ${invoice.balance.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {invoice.status === "DRAFT" && (
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => handleSendInvoice(invoice.id)}
-                              disabled={markAsSent.isPending}
-                            >
-                              <Send className="mr-2 h-4 w-4" />
-                              Send
-                            </Button>
-                          )}
-                        <Link href={`/invoices/${invoice.id}`}>
-                          <Button variant="outline" size="sm">
-                            View
-                          </Button>
-                        </Link>
-                        </div>
-                      </TableCell>
+            <Card className="bg-[#1e3a5f] border-slate-700">
+              <CardHeader>
+                <CardTitle className="text-slate-100">Invoice List</CardTitle>
+                <CardDescription className="text-slate-300">
+                  Manage your invoices
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-slate-100">Customer</TableHead>
+                      <TableHead className="text-slate-100">Status</TableHead>
+                      <TableHead className="text-slate-100">Created Date</TableHead>
+                      <TableHead className="text-slate-100">Issue Date</TableHead>
+                      <TableHead className="text-slate-100">Due Date</TableHead>
+                      <TableHead className="text-right text-slate-100">Total</TableHead>
+                      <TableHead className="text-right text-slate-100">Balance</TableHead>
+                      <TableHead className="text-right text-slate-100">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {data.content.map((invoice) => (
+                      <TableRow key={invoice.id}>
+                        <TableCell className="font-medium text-slate-100">
+                          {invoice.customerName}
+                        </TableCell>
+                        <TableCell>
+                          <InvoiceStatusBadge status={invoice.status} />
+                        </TableCell>
+                        <TableCell className="text-slate-100">
+                          {invoice.createdAt ? formatDate(invoice.createdAt) : "-"}
+                        </TableCell>
+                        <TableCell className="text-slate-100">
+                          {formatDate(invoice.issueDate)}
+                        </TableCell>
+                        <TableCell className="text-slate-100">
+                          {formatDate(invoice.dueDate)}
+                        </TableCell>
+                        <TableCell className="text-right text-slate-100">
+                          ${invoice.totalAmount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right text-slate-100">
+                          ${invoice.balance.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            {invoice.status === "DRAFT" && (
+                              <Button
+                                variant="default"
+                                size="sm"
+                                onClick={() => handleSendInvoice(invoice.id)}
+                                disabled={markAsSent.isPending}
+                              >
+                                <Send className="mr-2 h-4 w-4" />
+                                Send
+                              </Button>
+                            )}
+                          <Link 
+                            href={`/invoices/${invoice.id}`} 
+                            prefetch={true}
+                            onMouseEnter={() => prefetchRouteData(queryClient, `/invoices/${invoice.id}`)}
+                          >
+                            <Button variant="outline" size="sm">
+                              View
+                            </Button>
+                          </Link>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
             <div className="flex items-center justify-between">
               <div className="text-sm text-muted-foreground">

@@ -57,6 +57,12 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 
+# Secrets and sensitive files
+DEPLOYMENT_SECRETS.txt
+*SECRETS*.txt
+*secrets*.txt
+*.secret
+
 # Testing
 coverage/
 .nyc_output/

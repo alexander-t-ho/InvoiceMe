@@ -91,7 +91,7 @@ export default function PaymentsPage() {
                       ${(invoice.totalAmount - invoice.balance).toFixed(2)}
                     </span>
                   </div>
-                  <Link href={`/invoices/${invoice.id}`} className="block mt-4">
+                  <Link href={`/invoices/${invoice.id}`} prefetch={true} className="block mt-4">
                     <Button variant="outline" className="w-full">
                       View Invoice
                     </Button>

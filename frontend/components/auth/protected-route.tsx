@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 
@@ -12,24 +12,48 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, userType } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Memoize redirect logic to prevent unnecessary recalculations
+  const shouldRedirect = useMemo(() => {
+    if (isLoading) return null;
+    if (!isAuthenticated) return "/login";
+    
+    // Allow customers to access portal routes
+    if (userType === "CUSTOMER" && pathname?.startsWith("/portal")) {
+      return null; // Customer is on a portal route, allow access
+    }
+    
+    // Redirect customers trying to access admin routes
+    if (userType === "CUSTOMER") return "/portal";
+    
+    // Redirect admins trying to access portal routes (optional - you may want to allow this)
+    if (userType === "ADMIN" && pathname?.startsWith("/portal")) {
+      return "/"; // Admin trying to access portal, redirect to admin dashboard
+    }
+    
+    return null;
+  }, [isLoading, isAuthenticated, userType, pathname]);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push("/login");
-    } else if (!isLoading && isAuthenticated && userType === "CUSTOMER") {
-      // Redirect customers to their portal if they try to access admin pages
-      router.push("/portal/invoices");
+    if (shouldRedirect) {
+      // Use replace instead of push to avoid adding to history stack
+      router.replace(shouldRedirect);
     }
-  }, [isAuthenticated, isLoading, userType, router]);
+  }, [shouldRedirect, router]);
 
-  // Show children immediately if authenticated as admin, don't block on loading
-  // This allows the page to start rendering while auth check completes
-  if (!isLoading && isAuthenticated && userType === "ADMIN") {
-    return <>{children}</>;
-  }
-
-  // Only show loading if we're actually checking auth
+  // OPTIMIZATION: Show content immediately if auth is cached
+  // Only show loading if we're actually redirecting or don't have cached auth
   if (isLoading) {
+    // Check if we have cached auth data - if so, optimistically show content
+    if (typeof window !== "undefined") {
+      const cachedToken = localStorage.getItem("auth_token");
+      if (cachedToken) {
+        // Optimistically show content - auth check is fast and cached
+        // This prevents blocking navigation while auth state loads
+        return <>{children}</>;
+      }
+    }
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size="lg" />
@@ -37,8 +61,24 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  // Not authenticated and not loading - will redirect
-  // Or customer trying to access admin page - will redirect
-  return null;
+  // Show children if authenticated and on correct route
+  if (isAuthenticated) {
+    // Allow customers on portal routes
+    if (userType === "CUSTOMER" && pathname?.startsWith("/portal")) {
+      return <>{children}</>;
+    }
+    // Allow admins on admin routes
+    if (userType === "ADMIN" && !pathname?.startsWith("/portal")) {
+      return <>{children}</>;
+    }
+  }
+
+  // Only show loading if we're actually checking auth or redirecting
+  // This prevents flash of empty content during redirect
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <LoadingSpinner size="lg" />
+    </div>
+  );
 }
 

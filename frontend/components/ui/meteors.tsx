@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import React from "react";
+import React, { useMemo } from "react";
 
 export const Meteors = ({
   number,
@@ -8,31 +8,36 @@ export const Meteors = ({
   number?: number;
   className?: string;
 }) => {
-  const meteors = new Array(number || 20).fill(true);
+  // Memoize meteor positions to avoid recalculation on every render
+  const meteors = useMemo(() => {
+    const count = number || 20;
+    return Array.from({ length: count }, (_, idx) => ({
+      id: idx,
+      top: Math.random() * 100,
+      left: Math.random() * 100,
+      delay: Math.random() * (0.8 - 0.2) + 0.2,
+      duration: Math.floor(Math.random() * (10 - 2) + 2),
+    }));
+  }, [number]);
+
   return (
     <>
-      {meteors.map((el, idx) => {
-        // Generate random positions across the entire viewport
-        const randomTop = Math.random() * 100; // 0-100% of viewport height
-        const randomLeft = Math.random() * 100; // 0-100% of viewport width
-        
-        return (
-          <span
-            key={"meteor" + idx}
-            className={cn(
-              "animate-meteor-effect absolute h-0.5 w-0.5 rounded-[9999px] bg-slate-500 shadow-[0_0_0_1px_#ffffff10] rotate-[215deg]",
-              "before:content-[''] before:absolute before:top-1/2 before:transform before:-translate-y-[50%] before:w-[50px] before:h-[1px] before:bg-gradient-to-r before:from-[#64748b] before:to-transparent",
-              className
-            )}
-            style={{
-              top: `${randomTop}%`,
-              left: `${randomLeft}%`,
-              animationDelay: Math.random() * (0.8 - 0.2) + 0.2 + "s",
-              animationDuration: Math.floor(Math.random() * (10 - 2) + 2) + "s",
-            }}
-          ></span>
-        );
-      })}
+      {meteors.map((meteor) => (
+        <span
+          key={`meteor-${meteor.id}`}
+          className={cn(
+            "animate-meteor-effect absolute h-0.5 w-0.5 rounded-[9999px] bg-slate-500 shadow-[0_0_0_1px_#ffffff10] rotate-[215deg]",
+            "before:content-[''] before:absolute before:top-1/2 before:transform before:-translate-y-[50%] before:w-[50px] before:h-[1px] before:bg-gradient-to-r before:from-[#64748b] before:to-transparent",
+            className
+          )}
+          style={{
+            top: `${meteor.top}%`,
+            left: `${meteor.left}%`,
+            animationDelay: `${meteor.delay}s`,
+            animationDuration: `${meteor.duration}s`,
+          }}
+        ></span>
+      ))}
     </>
   );
 };

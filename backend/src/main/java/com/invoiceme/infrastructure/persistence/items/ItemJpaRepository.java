@@ -26,3 +26,9 @@ interface ItemJpaRepository extends JpaRepository<ItemEntity, UUID> {
 
 
 
+
+
+
+
+
+

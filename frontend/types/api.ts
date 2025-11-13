@@ -87,6 +87,7 @@ export interface InvoiceSummaryResponse {
   dueDate: string;
   totalAmount: number;
   balance: number;
+  createdAt?: string; // Optional until backend is updated
 }
 
 export type PaymentPlan = "FULL" | "PAY_IN_4";

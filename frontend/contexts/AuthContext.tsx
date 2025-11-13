@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useCallback } from "react";
 import { authApi } from "@/lib/api/auth";
 import type { User, LoginRequest, RegisterRequest } from "@/types/auth";
 import { useRouter } from "next/navigation";
@@ -30,25 +30,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Load auth state from localStorage on mount
   useEffect(() => {
-    const storedToken = localStorage.getItem(TOKEN_KEY);
-    const storedUser = localStorage.getItem(USER_KEY);
-
-    if (storedToken && storedUser) {
+    const loadAuthState = () => {
       try {
-        const parsedUser = JSON.parse(storedUser);
-        setToken(storedToken);
-        setUser(parsedUser);
-        setUserType(parsedUser.userType || null);
+        // Check if we're in the browser
+        if (typeof window === "undefined") {
+          setIsLoading(false);
+          return;
+        }
+
+        const storedToken = localStorage.getItem(TOKEN_KEY);
+        const storedUser = localStorage.getItem(USER_KEY);
+
+        if (storedToken && storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            setToken(storedToken);
+            setUser(parsedUser);
+            setUserType(parsedUser.userType || null);
+          } catch (error) {
+            // Invalid stored data, clear it
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(USER_KEY);
+          }
+        }
       } catch (error) {
-        // Invalid stored data, clear it
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
+        console.error("Error loading auth state:", error);
+      } finally {
+        setIsLoading(false);
       }
-    }
-    setIsLoading(false);
+    };
+
+    // Load immediately - no need for setTimeout delay
+    loadAuthState();
   }, []);
 
-  const login = async (identifier: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string) => {
     const request = { identifier, password };
     const response = await authApi.unifiedLogin(request);
     
@@ -70,26 +86,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       userId: response.userId,
       customerId: response.customerId
     }));
-  };
+  }, []);
 
-  const register = async (username: string, email: string, password: string) => {
+  const register = useCallback(async (username: string, email: string, password: string) => {
     const request: RegisterRequest = { username, email, password };
     await authApi.register(request);
     
     // After registration, automatically login
     await login(username, password);
-  };
+  }, [login]);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setToken(null);
     setUser(null);
     setUserType(null);
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
-    router.push("/login");
-  };
+    router.replace("/login");
+  }, [router]);
 
-  const value: AuthContextType = {
+  // Memoize the context value to prevent unnecessary re-renders
+  const value: AuthContextType = useMemo(() => ({
     user,
     token,
     userType,
@@ -98,7 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     register,
     logout,
-  };
+  }), [user, token, userType, isLoading, login, register, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useItems } from "@/hooks/useItems";
+import { useAuth } from "@/contexts/AuthContext";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   Table,
@@ -23,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { ItemResponse } from "@/types/api";
+import { format } from "date-fns";
 
 interface ItemLibraryDialogProps {
   open: boolean;
@@ -37,6 +39,7 @@ export function ItemLibraryDialog({
 }: ItemLibraryDialogProps) {
   const [page, setPage] = useState(0);
   const { data, isLoading } = useItems(page, 10);
+  const { user } = useAuth();
 
   const handleSelect = (item: ItemResponse) => {
     onSelect(item);
@@ -65,29 +68,42 @@ export function ItemLibraryDialog({
                   <TableRow>
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Unit Price</TableHead>
+                    <TableHead>Created By</TableHead>
+                    <TableHead>Created Date</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.content.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">
-                        {item.description}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        ${item.unitPrice.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSelect(item)}
-                        >
-                          Select
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {data.content.map((item) => {
+                    const isCurrentUser = user?.userId === item.userId;
+                    const creatorName = isCurrentUser ? "You" : `User ${item.userId.substring(0, 8)}`;
+                    
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">
+                          {item.description}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          ${item.unitPrice.toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          {creatorName}
+                        </TableCell>
+                        <TableCell>
+                          {format(new Date(item.createdAt), "MMM dd, yyyy")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSelect(item)}
+                          >
+                            Select
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -136,6 +152,7 @@ export function ItemLibraryDialog({
     </Dialog>
   );
 }
+
 
 
 

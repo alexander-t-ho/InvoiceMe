@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -42,8 +43,13 @@ public class MarkInstallmentPaidHandler {
             return; // All installments are already paid
         }
         
+        // Normalize both amounts to 2 decimal places for comparison
+        // This ensures consistent comparison even if scales differ
+        BigDecimal paymentAmount = command.paymentAmount().setScale(2, RoundingMode.HALF_UP);
+        BigDecimal installmentAmount = nextPending.getAmount().setScale(2, RoundingMode.HALF_UP);
+        
         // Check if payment amount matches (with small tolerance for rounding)
-        BigDecimal difference = command.paymentAmount().subtract(nextPending.getAmount()).abs();
+        BigDecimal difference = paymentAmount.subtract(installmentAmount).abs();
         if (difference.compareTo(new BigDecimal("0.01")) > 0) {
             // Payment doesn't match installment amount - don't auto-mark as paid
             // This allows for partial payments or overpayments
@@ -55,6 +61,10 @@ public class MarkInstallmentPaidHandler {
         paymentScheduleRepository.save(nextPending);
     }
 }
+
+
+
+
 
 
 

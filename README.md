@@ -30,7 +30,8 @@ The system implements core business domains: **Customers**, **Invoices**, and **
 
 ### Infrastructure
 - **Containerization**: Docker + Docker Compose
-- **CI/CD**: GitHub Actions (to be configured)
+- **CI/CD**: GitHub Actions
+- **Production**: Vercel (frontend) + Railway/Render (backend)
 
 ## Prerequisites
 
@@ -208,6 +209,26 @@ docker-compose exec postgres psql -U invoiceme -d invoiceme
 2. Write tests for new features
 3. Update documentation as needed
 4. Follow conventional commit messages
+
+## Production Deployment
+
+For production deployment, see the comprehensive guides:
+
+- [Quick Start Deployment](./docs/QUICK_START_DEPLOYMENT.md) - 5-minute deployment guide
+- [Production Deployment Guide](./docs/PRODUCTION_DEPLOYMENT.md) - Complete step-by-step guide
+- [Environment Variables](./docs/PRODUCTION_ENV_VARS.md) - Production environment configuration
+- [Troubleshooting](./docs/TROUBLESHOOTING.md) - Common issues and solutions
+- [Monitoring](./docs/MONITORING.md) - Monitoring and logging setup
+- [Rollback Procedures](./docs/ROLLBACK.md) - How to rollback deployments
+
+### Quick Deploy
+
+1. **Database**: Set up PostgreSQL on Railway/Render/Neon
+2. **Backend**: Deploy to Railway or Render
+3. **Frontend**: Deploy to Vercel
+4. **Domain**: Configure DNS and SSL (optional)
+
+See [Quick Start Deployment Guide](./docs/QUICK_START_DEPLOYMENT.md) for details.
 
 ## Documentation
 

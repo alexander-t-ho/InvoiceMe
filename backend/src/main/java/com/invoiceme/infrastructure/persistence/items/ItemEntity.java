@@ -18,10 +18,10 @@ import java.util.UUID;
 class ItemEntity {
     
     @Id
-    @Column(columnDefinition = "BINARY(16)")
+    @Column(columnDefinition = "UUID")
     private UUID id;
     
-    @Column(name = "user_id", nullable = false, columnDefinition = "BINARY(16)")
+    @Column(name = "user_id", nullable = false, columnDefinition = "UUID")
     private UUID userId;
     
     @Column(nullable = false, columnDefinition = "TEXT")
@@ -113,6 +113,8 @@ class ItemEntity {
         this.updatedAt = updatedAt;
     }
 }
+
+
 
 
 

@@ -11,10 +11,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 5 * 60 * 1000, // 5 minutes - data doesn't change that frequently
-            cacheTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer
+            gcTime: 10 * 60 * 1000, // 10 minutes - keep in cache longer (cacheTime renamed to gcTime in v5)
             refetchOnWindowFocus: false,
-            refetchOnMount: false, // Don't refetch if data is fresh
+            refetchOnMount: false, // Don't refetch if data is fresh - critical for fast navigation
+            refetchOnReconnect: false, // Don't refetch on reconnect if data is fresh
             retry: 1,
+            retryDelay: 1000, // Wait 1 second before retry
+            // Enable request deduplication
+            structuralSharing: true,
+            // Use cached data immediately while refetching in background
+            placeholderData: (previousData) => previousData,
+            // Network mode - only fetch when online
+            networkMode: 'online',
+            // Optimize for fast navigation - prioritize cached data
+            notifyOnChangeProps: ['data', 'error'], // Only notify on data/error changes, not loading states
           },
         },
       })

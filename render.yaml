@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: invoiceme-backend
+    env: java
+    region: oregon
+    plan: free
+    buildCommand: cd backend && ./gradlew build -x test
+    startCommand: cd backend && java -jar build/libs/invoiceme-backend-0.0.1-SNAPSHOT.jar
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: SERVER_PORT
+        value: 8081
+    # Database will be linked separately
+    # Add other environment variables in Render dashboard
+
+databases:
+  - name: invoiceme-db
+    databaseName: invoiceme
+    user: invoiceme
+    plan: free
+

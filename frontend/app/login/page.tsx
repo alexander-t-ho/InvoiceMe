@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { LoginForm } from "@/components/auth/login-form";
@@ -11,19 +11,38 @@ import { FileText, Shield } from "lucide-react";
 export default function LoginPage() {
   const { isAuthenticated, isLoading, userType } = useAuth();
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      // Redirect based on user type
+    setMounted(true);
+  }, []);
+
+  // Timeout fallback to show form if loading takes too long
+  useEffect(() => {
+    if (mounted && isLoading) {
+      const timer = setTimeout(() => {
+        setShowForm(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (!isLoading) {
+      setShowForm(true);
+    }
+  }, [mounted, isLoading]);
+
+  useEffect(() => {
+    if (mounted && !isLoading && isAuthenticated) {
+      // Redirect based on user type - use replace to avoid adding to history
       if (userType === "CUSTOMER") {
-        router.push("/portal/invoices");
+        router.replace("/portal"); // Customer dashboard
       } else {
-        router.push("/"); // Admin dashboard
+        router.replace("/"); // Admin dashboard
       }
     }
-  }, [isAuthenticated, isLoading, userType, router]);
+  }, [isAuthenticated, isLoading, userType, router, mounted]);
 
-  if (isLoading) {
+  // Show loading only briefly while mounting
+  if (!mounted) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#0f1e35]">
         <LoadingSpinner size="lg" />
@@ -31,8 +50,18 @@ export default function LoginPage() {
     );
   }
 
+  // If still loading after mount, show form anyway after timeout to prevent infinite loading
+  if (isLoading && !showForm) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0f1e35]">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  // Don't show anything if authenticated (will redirect)
   if (isAuthenticated) {
-    return null; // Will redirect
+    return null;
   }
 
   return (
@@ -42,7 +71,7 @@ export default function LoginPage() {
           <div className="mx-auto w-16 h-16 bg-[#1e3a5f] rounded-xl flex items-center justify-center shadow-lg">
             <FileText className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-100">InvoiceMe</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-100">GimmeYoMoney</h1>
           <p className="text-slate-300">Sign in to your account</p>
         </div>
         
@@ -53,17 +82,13 @@ export default function LoginPage() {
               <CardTitle className="text-2xl font-bold text-center text-slate-100">Sign In</CardTitle>
             </div>
             <CardDescription className="text-center text-slate-300">
-              Enter your username/email and password to continue
+              Enter your username/email and password to continue. Works for both admin and customer accounts.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <LoginForm />
           </CardContent>
         </Card>
-        
-        <p className="text-center text-sm text-slate-400">
-          Customer portal? <a href="/portal" className="text-blue-400 hover:underline">Click here</a>
-        </p>
       </div>
     </div>
   );

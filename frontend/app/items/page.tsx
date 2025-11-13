@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useItems, useDeleteItem } from "@/hooks/useItems";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -14,7 +15,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { Plus, Edit, Trash2 } from "lucide-react";
+import { format } from "date-fns";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +38,7 @@ export default function ItemsPage() {
 
   const { data, isLoading, error } = useItems(page, 20);
   const deleteItem = useDeleteItem();
+  const { user } = useAuth();
 
   const handleDelete = (id: string) => {
     setItemToDelete(id);
@@ -57,15 +61,8 @@ export default function ItemsPage() {
     setEditDialogOpen(true);
   };
 
-  if (isLoading) {
-    return (
-      <MainLayout>
-        <div className="flex items-center justify-center py-12">
-          <LoadingSpinner size="lg" />
-        </div>
-      </MainLayout>
-    );
-  }
+  // Optimistic rendering - show page structure immediately
+  const showFullLoading = isLoading && !data;
 
   if (error) {
     return (
@@ -79,6 +76,26 @@ export default function ItemsPage() {
           </div>
         </div>
       </MainLayout>
+    );
+  }
+
+  if (showFullLoading) {
+    return (
+      <ProtectedRoute>
+        <MainLayout>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">Item Library</h1>
+                <p className="text-muted-foreground">
+                  Manage reusable items for your invoices
+                </p>
+              </div>
+            </div>
+            <TableSkeleton rows={10} cols={4} />
+          </div>
+        </MainLayout>
+      </ProtectedRoute>
     );
   }
 
@@ -99,6 +116,12 @@ export default function ItemsPage() {
             </Button>
           </div>
 
+          {isLoading && data && (
+            <div className="rounded-md border">
+              <TableSkeleton rows={5} cols={4} />
+            </div>
+          )}
+
           {data && data.content.length > 0 ? (
             <>
               <div className="rounded-md border">
@@ -107,38 +130,51 @@ export default function ItemsPage() {
                     <TableRow>
                       <TableHead>Description</TableHead>
                       <TableHead className="text-right">Unit Price</TableHead>
+                      <TableHead>Created By</TableHead>
+                      <TableHead>Created Date</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.content.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-medium">
-                          {item.description}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${item.unitPrice.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end space-x-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEdit(item.id, item.description, item.unitPrice)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDelete(item.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {data.content.map((item) => {
+                      const isCurrentUser = user?.userId === item.userId;
+                      const creatorName = isCurrentUser ? "You" : `User ${item.userId.substring(0, 8)}`;
+                      
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">
+                            {item.description}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            ${item.unitPrice.toFixed(2)}
+                          </TableCell>
+                          <TableCell>
+                            {creatorName}
+                          </TableCell>
+                          <TableCell>
+                            {format(new Date(item.createdAt), "MMM dd, yyyy")}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleEdit(item.id, item.description, item.unitPrice)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -254,6 +290,7 @@ export default function ItemsPage() {
     </ProtectedRoute>
   );
 }
+
 
 
 

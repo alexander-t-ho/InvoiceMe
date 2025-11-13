@@ -19,10 +19,10 @@ import java.util.UUID;
 class PaymentScheduleEntity {
     
     @Id
-    @Column(columnDefinition = "BINARY(16)")
+    @Column(columnDefinition = "UUID")
     private UUID id;
     
-    @Column(name = "invoice_id", nullable = false, columnDefinition = "BINARY(16)")
+    @Column(name = "invoice_id", nullable = false, columnDefinition = "UUID")
     private UUID invoiceId;
     
     @Column(name = "installment_number", nullable = false)
@@ -128,6 +128,8 @@ class PaymentScheduleEntity {
         this.createdAt = createdAt;
     }
 }
+
+
 
 
 

@@ -1,132 +1,167 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
+import { ProtectedRoute } from "@/components/auth/protected-route";
+import { MainLayout } from "@/components/layout/main-layout";
+import { CustomerDashboardCards } from "@/components/ui/customer-dashboard-cards";
+import { invoiceService } from "@/lib/services/InvoiceService";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import { useToast } from "@/hooks/use-toast";
-import { customerService } from "@/lib/services/CustomerService";
-import { FileText } from "lucide-react";
-
-const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
-});
-
-type LoginFormData = z.infer<typeof loginSchema>;
+import type { InvoiceSummaryResponse } from "@/types/api";
 
 export default function CustomerPortalPage() {
   const router = useRouter();
-  const { toast } = useToast();
-  const [isLoading, setIsLoading] = useState(false);
-  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const { isAuthenticated, isLoading: authLoading, userType, user } = useAuth();
+  const [mounted, setMounted] = useState(false);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormData>({
-    resolver: zodResolver(loginSchema),
-  });
-
-  const { ref: emailRef, ...emailRegister } = register("email");
-  const { ref: passwordRef, ...passwordRegister } = register("password");
-
-  // Handle client-side mounting and auto-focus
   useEffect(() => {
-    if (emailInputRef.current) {
-      emailInputRef.current.focus();
-    }
+    setMounted(true);
   }, []);
 
-  // Combined ref callback
-  const setEmailRef = (element: HTMLInputElement | null) => {
-    emailRef(element);
-    emailInputRef.current = element;
-  };
-
-  const onSubmit = async (data: LoginFormData) => {
-    setIsLoading(true);
-    try {
-      const customer = await customerService.authenticateCustomer(data.email, data.password);
-      // Store customer ID in sessionStorage for the portal session
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("portal_customer_id", customer.id);
-        sessionStorage.setItem("portal_customer_email", customer.email);
+  useEffect(() => {
+    if (mounted && !authLoading) {
+      if (!isAuthenticated) {
+        // Not authenticated, redirect to universal login - use replace
+        router.replace("/login");
+        return;
       }
-      router.push("/portal/invoices");
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.response?.data?.message || "Invalid email or password. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
+
+      if (userType === "ADMIN") {
+        // Admin should go to admin dashboard
+        router.replace("/");
+        return;
+      }
+
+      // Get customer ID
+      if (userType === "CUSTOMER" && user?.customerId) {
+        setCustomerId(user.customerId);
+      } else {
+        // Fallback to session storage
+        const storedCustomerId = sessionStorage.getItem("portal_customer_id");
+        if (storedCustomerId) {
+          setCustomerId(storedCustomerId);
+        } else {
+          router.replace("/login");
+        }
+      }
     }
+  }, [mounted, authLoading, isAuthenticated, userType, user, router]);
+
+  // Fetch customer invoices - optimized with placeholderData for instant rendering
+  const shouldFetch = isAuthenticated && !authLoading && customerId !== null;
+  const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
+    queryKey: ["customer-invoices", customerId],
+    queryFn: () => invoiceService.getCustomerInvoices(customerId!),
+    enabled: shouldFetch,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    placeholderData: (previousData) => previousData, // Show cached data immediately
+    refetchOnMount: false, // Don't refetch if data is fresh
+  });
+
+  // Calculate dashboard statistics
+  const calculateStats = () => {
+    if (!invoicesData?.content) {
+      return {
+        totalInvoices: 0,
+        totalPaid: 0,
+        outstandingBalance: 0,
+        overdueInvoices: 0,
+        unpaidInvoices: 0,
+        soonestDueInvoiceId: null,
+      };
+    }
+
+    const invoices: InvoiceSummaryResponse[] = invoicesData.content.filter(
+      (invoice) => invoice.status === "SENT" || invoice.status === "PAID"
+    );
+    const totalInvoices = invoices.length;
+
+    let totalPaid = 0;
+    let outstandingBalance = 0;
+    let overdueInvoices = 0;
+    let unpaidInvoices = 0;
+    let soonestDueInvoice: { id: string; dueDate: Date } | null = null;
+    const today = new Date();
+
+    invoices.forEach((invoice: InvoiceSummaryResponse) => {
+      const amountPaid = invoice.totalAmount - invoice.balance;
+      totalPaid += amountPaid;
+      outstandingBalance += invoice.balance;
+
+      // Check if unpaid (has balance remaining)
+      if (invoice.balance > 0) {
+        unpaidInvoices++;
+        
+        // Track invoice with soonest due date
+        const dueDate = new Date(invoice.dueDate);
+        if (!soonestDueInvoice || dueDate < soonestDueInvoice.dueDate) {
+          soonestDueInvoice = {
+            id: invoice.id,
+            dueDate: dueDate,
+          };
+        }
+      }
+
+      // Check if overdue
+      if (invoice.status === "SENT" && invoice.balance > 0) {
+        const dueDate = new Date(invoice.dueDate);
+        if (dueDate < today) {
+          overdueInvoices++;
+        }
+      }
+    });
+
+    const soonestDueInvoiceId: string | null = soonestDueInvoice ? soonestDueInvoice.id : null;
+
+    return {
+      totalInvoices,
+      totalPaid,
+      outstandingBalance,
+      overdueInvoices,
+      unpaidInvoices,
+      soonestDueInvoiceId,
+    };
   };
 
+  const stats = calculateStats();
+  const isLoading = invoicesLoading || authLoading || !mounted;
+
+  // Show loading while checking auth or fetching data
+  if (!mounted || authLoading || (isAuthenticated && userType === "CUSTOMER" && !customerId)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#0f1e35]">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  // Only show dashboard for customers
+  if (isAuthenticated && userType === "CUSTOMER") {
+    return (
+      <ProtectedRoute>
+        <MainLayout>
+          <CustomerDashboardCards
+            totalInvoices={stats.totalInvoices}
+            totalPaid={stats.totalPaid}
+            outstandingBalance={stats.outstandingBalance}
+            overdueInvoices={stats.overdueInvoices}
+            unpaidInvoices={stats.unpaidInvoices}
+            soonestDueInvoiceId={stats.soonestDueInvoiceId}
+            isLoading={isLoading}
+            customerName={user?.email || user?.username || "Customer"}
+          />
+        </MainLayout>
+      </ProtectedRoute>
+    );
+  }
+
+  // Fallback loading state
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f1e35] p-4 relative">
-      <Card className="w-full max-w-md bg-[#1e3a5f] border-slate-700 relative z-10">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 w-12 h-12 bg-[#2a4d75] rounded-full flex items-center justify-center">
-            <FileText className="h-6 w-6 text-blue-400" />
-          </div>
-          <CardTitle className="text-2xl text-slate-100">Customer Portal</CardTitle>
-          <CardDescription className="text-slate-300">
-            Enter your email and password to view your invoices and make payments
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="your.email@example.com"
-                {...emailRegister}
-                disabled={isLoading}
-                ref={setEmailRef}
-              />
-              <p className={`text-sm min-h-[1.25rem] ${errors.email ? 'text-destructive' : 'text-transparent'}`}>
-                {errors.email?.message || '\u00A0'}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                {...passwordRegister}
-                disabled={isLoading}
-                ref={passwordRef}
-              />
-              <p className={`text-sm min-h-[1.25rem] ${errors.password ? 'text-destructive' : 'text-transparent'}`}>
-                {errors.password?.message || '\u00A0'}
-              </p>
-            </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Loading...
-                </>
-              ) : (
-                "View My Invoices"
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <div className="flex items-center justify-center min-h-screen bg-[#0f1e35]">
+      <LoadingSpinner size="lg" />
     </div>
   );
 }

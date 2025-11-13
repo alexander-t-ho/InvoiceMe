@@ -44,19 +44,34 @@ export function LoginForm() {
           description: "Logged in successfully",
         });
         
+        // Store customer ID in sessionStorage for portal compatibility if customer
+        if (user.userType === "CUSTOMER" && user.customerId) {
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem("portal_customer_id", user.customerId);
+            sessionStorage.setItem("portal_customer_email", user.email || "");
+          }
+        }
+        
         // Redirect based on user type
         if (user.userType === "CUSTOMER") {
-          router.push("/portal/invoices");
+          router.replace("/portal"); // Customer dashboard
         } else {
-          router.push("/"); // Admin dashboard
+          router.replace("/"); // Admin dashboard
         }
       } else {
         router.push("/");
       }
     } catch (error: any) {
+      console.error("Login error:", error);
+      const errorMessage = 
+        error.response?.data?.message || 
+        error.response?.data?.errors ? 
+          Object.values(error.response.data.errors).join(", ") : 
+          error.message || 
+          "Invalid username/email or password";
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Invalid username/email or password",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

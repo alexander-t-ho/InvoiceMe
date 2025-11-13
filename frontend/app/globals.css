@@ -86,4 +86,23 @@
   }
 }
 
+/* Print styles for midnight blue theme */
+@media print {
+  @page {
+    background-color: #0f1e35;
+  }
+  
+  body {
+    background-color: #0f1e35 !important;
+    color: #f1f5f9 !important;
+  }
+  
+  /* Ensure all backgrounds use midnight blue theme when printing */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+}
+
 

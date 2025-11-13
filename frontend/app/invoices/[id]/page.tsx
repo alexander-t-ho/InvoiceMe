@@ -41,9 +41,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { addLineItemSchema, type AddLineItemFormData } from "@/lib/validations/invoice";
 import { recordPaymentSchema, type RecordPaymentFormData } from "@/lib/validations/payment";
-import { Trash2, Plus, Send, DollarSign, Library, Cloud, Printer } from "lucide-react";
+import { Trash2, Plus, Send, DollarSign, Library, Printer } from "lucide-react";
 import { CreditCardSelector } from "@/components/payments/credit-card-selector";
-import { Meteors } from "@/components/ui/meteors";
+import { DebitCardSelector } from "@/components/payments/debit-card-selector";
+import { BankAccountSelector } from "@/components/payments/bank-account-selector";
+import { CheckDraftForm, type CheckDraftFormData } from "@/components/payments/check-draft-form";
+import { SmallMeteors } from "@/components/ui/small-meteors";
 import { useState, Fragment } from "react";
 import { ItemLibraryDialog } from "@/components/items/item-library-dialog";
 import { useCreateItem } from "@/hooks/useItems";
@@ -71,6 +74,9 @@ export default function InvoiceDetailPage() {
   const [discountCodeInput, setDiscountCodeInput] = useState("");
   const [discountDialogOpen, setDiscountDialogOpen] = useState(false);
   const [selectedCreditCardId, setSelectedCreditCardId] = useState<string | null>(null);
+  const [selectedDebitCardId, setSelectedDebitCardId] = useState<string | null>(null);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string | null>(null);
+  const [checkDraftData, setCheckDraftData] = useState<CheckDraftFormData | null>(null);
   const createItem = useCreateItem();
   const applyDiscount = useApplyDiscount();
   const removeDiscount = useRemoveDiscount();
@@ -138,10 +144,28 @@ export default function InvoiceDetailPage() {
       return;
     }
     
+    // If debit card is selected, validate that a card is chosen
+    if (data.paymentMethod === "DEBIT_CARD" && !selectedDebitCardId) {
+      return;
+    }
+    
+    // If bank transfer is selected, validate that an account is chosen
+    if (data.paymentMethod === "BANK_TRANSFER" && !selectedBankAccountId) {
+      return;
+    }
+    
+    // If check is selected, validate that check is drafted
+    if (data.paymentMethod === "CHECK" && !checkDraftData) {
+      return;
+    }
+    
     recordPayment.mutate(data, {
       onSuccess: () => {
         setRecordPaymentOpen(false);
         setSelectedCreditCardId(null);
+        setSelectedDebitCardId(null);
+        setSelectedBankAccountId(null);
+        setCheckDraftData(null);
         paymentForm.reset({
           invoiceId: invoiceId,
           amount: 0,
@@ -186,8 +210,8 @@ export default function InvoiceDetailPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Invoice Details</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-3xl font-bold tracking-tight text-slate-100">Invoice Details</h1>
+            <p className="text-slate-300">
               Invoice #{invoice.id.slice(0, 8)}
             </p>
           </div>
@@ -209,43 +233,45 @@ export default function InvoiceDetailPage() {
                     Record Payment
                   </Button>
                 </DialogTrigger>
-                <DialogContent className={paymentForm.watch("paymentMethod") === "CREDIT_CARD" ? "max-w-2xl" : ""}>
+                <DialogContent className={`bg-[#1e3a5f] border-slate-700 ${(paymentForm.watch("paymentMethod") === "CREDIT_CARD" || paymentForm.watch("paymentMethod") === "DEBIT_CARD" || paymentForm.watch("paymentMethod") === "BANK_TRANSFER" || paymentForm.watch("paymentMethod") === "CHECK") ? "max-w-2xl" : ""}`}>
                   <DialogHeader>
-                    <DialogTitle>Record Payment</DialogTitle>
-                    <DialogDescription>
+                    <DialogTitle className="text-slate-100">Record Payment</DialogTitle>
+                    <DialogDescription className="text-slate-300">
                       Record a payment for this invoice
                     </DialogDescription>
                   </DialogHeader>
                   <form onSubmit={paymentForm.handleSubmit(handleRecordPayment)} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="amount">Amount *</Label>
+                      <Label htmlFor="amount" className="text-slate-100">Amount *</Label>
                       <Input
                         id="amount"
                         type="number"
                         step="0.01"
                         {...paymentForm.register("amount", { valueAsNumber: true })}
+                        className="bg-[#0f1e35] border-slate-600 text-slate-100"
                       />
                       {paymentForm.formState.errors.amount && (
-                        <p className="text-sm text-destructive">
+                        <p className="text-sm text-red-400">
                           {paymentForm.formState.errors.amount.message}
                         </p>
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="paymentDate">Payment Date *</Label>
+                      <Label htmlFor="paymentDate" className="text-slate-100">Payment Date *</Label>
                       <Input
                         id="paymentDate"
                         type="date"
                         {...paymentForm.register("paymentDate")}
+                        className="bg-[#0f1e35] border-slate-600 text-slate-100"
                       />
                       {paymentForm.formState.errors.paymentDate && (
-                        <p className="text-sm text-destructive">
+                        <p className="text-sm text-red-400">
                           {paymentForm.formState.errors.paymentDate.message}
                         </p>
                       )}
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="paymentMethod">Payment Method *</Label>
+                      <Label htmlFor="paymentMethod" className="text-slate-100">Payment Method *</Label>
                       <Select
                         value={paymentForm.watch("paymentMethod")}
                         onValueChange={(value) => {
@@ -253,12 +279,21 @@ export default function InvoiceDetailPage() {
                           if (value !== "CREDIT_CARD") {
                             setSelectedCreditCardId(null);
                           }
+                          if (value !== "DEBIT_CARD") {
+                            setSelectedDebitCardId(null);
+                          }
+                          if (value !== "BANK_TRANSFER") {
+                            setSelectedBankAccountId(null);
+                          }
+                          if (value !== "CHECK") {
+                            setCheckDraftData(null);
+                          }
                         }}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="bg-[#0f1e35] border-slate-600 text-slate-100">
                           <SelectValue />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="bg-[#1e3a5f] border-slate-700 text-slate-100">
                           <SelectItem value="BANK_TRANSFER">Bank Transfer</SelectItem>
                           <SelectItem value="CREDIT_CARD">Credit Card</SelectItem>
                           <SelectItem value="DEBIT_CARD">Debit Card</SelectItem>
@@ -268,7 +303,7 @@ export default function InvoiceDetailPage() {
                         </SelectContent>
                       </Select>
                       {paymentForm.formState.errors.paymentMethod && (
-                        <p className="text-sm text-destructive">
+                        <p className="text-sm text-red-400">
                           {paymentForm.formState.errors.paymentMethod.message}
                         </p>
                       )}
@@ -283,11 +318,54 @@ export default function InvoiceDetailPage() {
                           userName={user.username || user.email || "User"}
                         />
                         {!selectedCreditCardId && (
-                          <p className="text-sm text-destructive">
+                          <p className="text-sm text-red-400">
                             Please select a credit card to continue
                           </p>
                         )}
                       </div>
+                    )}
+                    
+                    {/* Debit Card Selection - Only show when Debit Card is selected */}
+                    {paymentForm.watch("paymentMethod") === "DEBIT_CARD" && user && (
+                      <div className="space-y-2 border-t pt-4">
+                        <DebitCardSelector
+                          selectedCardId={selectedDebitCardId}
+                          onSelectCard={setSelectedDebitCardId}
+                          userName={user.username || user.email || "User"}
+                        />
+                        {!selectedDebitCardId && (
+                          <p className="text-sm text-red-400">
+                            Please select a debit card to continue
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Bank Account Selection - Only show when Bank Transfer is selected */}
+                    {paymentForm.watch("paymentMethod") === "BANK_TRANSFER" && user && (
+                      <div className="space-y-2 border-t pt-4">
+                        <BankAccountSelector
+                          selectedAccountId={selectedBankAccountId}
+                          onSelectAccount={setSelectedBankAccountId}
+                          userName={user.username || user.email || "User"}
+                        />
+                        {!selectedBankAccountId && (
+                          <p className="text-sm text-red-400">
+                            Please select a checking account to continue
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Check Draft Form - Only show when Check is selected */}
+                    {paymentForm.watch("paymentMethod") === "CHECK" && invoice && (
+                      <CheckDraftForm
+                        amount={paymentForm.watch("amount") || 0}
+                        payeeName={invoice.customerName}
+                        onDraftComplete={setCheckDraftData}
+                        isDrafted={!!checkDraftData}
+                        draftedData={checkDraftData}
+                      />
                     )}
                     
                     <DialogFooter>
@@ -297,6 +375,9 @@ export default function InvoiceDetailPage() {
                         onClick={() => {
                           setRecordPaymentOpen(false);
                           setSelectedCreditCardId(null);
+                          setSelectedDebitCardId(null);
+                          setSelectedBankAccountId(null);
+                          setCheckDraftData(null);
                         }}
                       >
                         Cancel
@@ -305,7 +386,10 @@ export default function InvoiceDetailPage() {
                         type="submit" 
                         disabled={
                           recordPayment.isPending || 
-                          (paymentForm.watch("paymentMethod") === "CREDIT_CARD" && !selectedCreditCardId)
+                          (paymentForm.watch("paymentMethod") === "CREDIT_CARD" && !selectedCreditCardId) ||
+                          (paymentForm.watch("paymentMethod") === "DEBIT_CARD" && !selectedDebitCardId) ||
+                          (paymentForm.watch("paymentMethod") === "BANK_TRANSFER" && !selectedBankAccountId) ||
+                          (paymentForm.watch("paymentMethod") === "CHECK" && !checkDraftData)
                         }
                       >
                         {recordPayment.isPending && (
@@ -322,77 +406,77 @@ export default function InvoiceDetailPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <Card>
+          <Card className="bg-[#1e3a5f] border-slate-700">
             <CardHeader>
-              <CardTitle>Invoice Information</CardTitle>
+              <CardTitle className="text-slate-100">Invoice Information</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Status:</span>
+                <span className="text-slate-300">Status:</span>
                 <InvoiceStatusBadge status={invoice.status} />
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Customer:</span>
-                <span className="font-medium">{invoice.customerName}</span>
+                <span className="text-slate-300">Customer:</span>
+                <span className="font-medium text-slate-100">{invoice.customerName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Issue Date:</span>
-                <span>{formatDate(invoice.issueDate)}</span>
+                <span className="text-slate-300">Issue Date:</span>
+                <span className="text-slate-100">{formatDate(invoice.issueDate)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Due Date:</span>
-                <span>{formatDate(invoice.dueDate)}</span>
+                <span className="text-slate-300">Due Date:</span>
+                <span className="text-slate-100">{formatDate(invoice.dueDate)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Amount:</span>
-                <span className="font-bold">${invoice.totalAmount.toFixed(2)}</span>
+                <span className="text-slate-300">Total Amount:</span>
+                <span className="font-bold text-slate-100">${invoice.totalAmount.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Subtotal:</span>
-                <span className="font-medium">${invoice.subtotal.toFixed(2)}</span>
+                <span className="text-slate-300">Subtotal:</span>
+                <span className="font-medium text-slate-100">${invoice.subtotal.toFixed(2)}</span>
               </div>
               {invoice.discountCode && (
                 <>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Discount ({invoice.discountCode}):</span>
-                    <span className="font-medium text-green-600">-${invoice.discountAmount.toFixed(2)}</span>
+                    <span className="text-slate-300">Discount ({invoice.discountCode}):</span>
+                    <span className="font-medium text-green-400">-${invoice.discountAmount.toFixed(2)}</span>
                   </div>
                 </>
               )}
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Total Amount:</span>
-                <span className="font-bold">${invoice.totalAmount.toFixed(2)}</span>
+                <span className="text-slate-300">Total Amount:</span>
+                <span className="font-bold text-slate-100">${invoice.totalAmount.toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Balance:</span>
-                <span className="font-bold">${invoice.balance.toFixed(2)}</span>
+                <span className="text-slate-300">Balance:</span>
+                <span className="font-bold text-slate-100">${invoice.balance.toFixed(2)}</span>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-[#1e3a5f] border-slate-700">
             <CardHeader>
-              <CardTitle>Summary</CardTitle>
+              <CardTitle className="text-slate-100">Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Line Items:</span>
-                <span>{invoice.lineItems.length}</span>
+                <span className="text-slate-300">Line Items:</span>
+                <span className="text-slate-100">{invoice.lineItems.length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Payments:</span>
-                <span>{payments?.length || 0}</span>
+                <span className="text-slate-300">Payments:</span>
+                <span className="text-slate-100">{payments?.length || 0}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Paid:</span>
-                <span>${(invoice.totalAmount - invoice.balance).toFixed(2)}</span>
+                <span className="text-slate-300">Paid:</span>
+                <span className="text-slate-100">${(invoice.totalAmount - invoice.balance).toFixed(2)}</span>
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Printable Invoice View */}
-        <Card className="print:shadow-none relative overflow-hidden bg-[#1e3a5f] border-slate-700">
+        <Card className="print:shadow-none relative overflow-hidden bg-[#1e3a5f] border-slate-700 print:bg-[#0f1e35]">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-slate-100">Invoice Preview</CardTitle>
@@ -407,25 +491,25 @@ export default function InvoiceDetailPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="bg-[#1e3a5f] p-8 print:bg-white print:p-0 relative z-10 border border-slate-700 print:border-0 rounded-lg">
+            <div className="bg-[#1e3a5f] p-8 print:bg-[#0f1e35] print:p-0 relative z-10 border border-slate-700 print:border-0 rounded-lg">
               {/* Header */}
-              <div className="flex items-start justify-between mb-8 pb-6 border-b border-slate-600 print:border-gray-200">
+              <div className="flex items-start justify-between mb-8 pb-6 border-b border-slate-600 print:border-slate-600">
                 {/* Left: Company Info */}
                 <div>
-                  <div className="text-xl font-bold text-slate-100 print:text-gray-900 mb-1">Your Company Inc.</div>
-                  <div className="text-sm text-slate-300 print:text-gray-700 space-y-0.5">
+                  <div className="text-xl font-bold text-slate-100 print:text-slate-100 mb-1">Your Company Inc.</div>
+                  <div className="text-sm text-slate-300 print:text-slate-300 space-y-0.5">
                     <div>1234 Company St.</div>
                     <div>Company Town, ST 12345</div>
                   </div>
                 </div>
                 
-                {/* Right: Cloud Icon and INVOICE Title */}
+                {/* Right: Small Meteors and INVOICE Title */}
                 <div className="flex flex-col items-end">
-                  {/* Cloud Icon Box */}
-                  <div className="border border-amber-700 w-24 h-24 mb-4 flex items-center justify-center bg-amber-50 print:bg-amber-50">
-                    <Cloud className="h-8 w-8 text-amber-700" />
+                  {/* Small Meteors Box */}
+                  <div className="border border-slate-500 w-24 h-24 mb-4 flex items-center justify-center bg-[#0f1e35] print:bg-[#0f1e35] relative overflow-hidden">
+                    <SmallMeteors number={8} />
                   </div>
-                  <div className="text-5xl font-bold text-amber-700">INVOICE</div>
+                  <div className="text-5xl font-bold text-slate-200 print:text-slate-200">INVOICE</div>
                 </div>
               </div>
 
@@ -433,32 +517,32 @@ export default function InvoiceDetailPage() {
               <div className="grid grid-cols-2 gap-6 mb-8">
                 {/* Left Column - Bill To */}
                 <div>
-                  <div className="font-semibold text-slate-200 print:text-gray-800 mb-2">Bill To</div>
-                  <div className="font-semibold text-slate-100 print:text-gray-900 mb-1">{invoice.customerName}</div>
-                  <div className="text-sm text-slate-300 print:text-gray-700">1234 Customer St,</div>
-                  <div className="text-sm text-slate-300 print:text-gray-700">Customer Town, ST 12345</div>
+                  <div className="font-semibold text-slate-200 print:text-slate-200 mb-2">Bill To</div>
+                  <div className="font-semibold text-slate-100 print:text-slate-100 mb-1">{invoice.customerName}</div>
+                  <div className="text-sm text-slate-300 print:text-slate-300">1234 Customer St,</div>
+                  <div className="text-sm text-slate-300 print:text-slate-300">Customer Town, ST 12345</div>
                 </div>
 
                 {/* Right Column - Invoice Details */}
                 <div className="space-y-0">
-                  <div className="bg-amber-700 text-white px-4 py-2 font-semibold text-sm">
+                  <div className="bg-slate-600 text-white px-4 py-2 font-semibold text-sm print:bg-slate-600">
                     Invoice #
                   </div>
-                  <div className="bg-[#2a4d75] print:bg-white border-x border-b border-slate-600 print:border-gray-200 px-4 py-2 text-slate-100 print:text-gray-800">
+                  <div className="bg-[#2a4d75] print:bg-[#1e3a5f] border-x border-b border-slate-600 print:border-slate-600 px-4 py-2 text-slate-100 print:text-slate-100">
                     {invoice.id.substring(0, 8).toUpperCase()}
                   </div>
                   
-                  <div className="bg-amber-700 text-white px-4 py-2 font-semibold text-sm">
+                  <div className="bg-slate-600 text-white px-4 py-2 font-semibold text-sm print:bg-slate-600">
                     Invoice date
                   </div>
-                  <div className="bg-[#2a4d75] print:bg-white border-x border-b border-slate-600 print:border-gray-200 px-4 py-2 text-slate-100 print:text-gray-800">
+                  <div className="bg-[#2a4d75] print:bg-[#1e3a5f] border-x border-b border-slate-600 print:border-slate-600 px-4 py-2 text-slate-100 print:text-slate-100">
                     {formatDate(invoice.issueDate)}
                   </div>
                   
-                  <div className="bg-amber-700 text-white px-4 py-2 font-semibold text-sm">
+                  <div className="bg-slate-600 text-white px-4 py-2 font-semibold text-sm print:bg-slate-600">
                     Due date
                   </div>
-                  <div className="bg-[#2a4d75] print:bg-white border-x border-b border-slate-600 print:border-gray-200 px-4 py-2 text-slate-100 print:text-gray-800">
+                  <div className="bg-[#2a4d75] print:bg-[#1e3a5f] border-x border-b border-slate-600 print:border-slate-600 px-4 py-2 text-slate-100 print:text-slate-100">
                     {formatDate(invoice.dueDate)}
                   </div>
                 </div>
@@ -468,7 +552,7 @@ export default function InvoiceDetailPage() {
               <div className="mb-8">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-amber-700 text-white">
+                    <tr className="bg-slate-600 text-white print:bg-slate-600">
                       <th className="text-left px-4 py-3 font-semibold text-sm">QTY</th>
                       <th className="text-left px-4 py-3 font-semibold text-sm">Description</th>
                       <th className="text-left px-4 py-3 font-semibold text-sm">Unit Price</th>
@@ -477,11 +561,11 @@ export default function InvoiceDetailPage() {
                   </thead>
                   <tbody>
                     {invoice.lineItems.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-600 print:border-gray-200">
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">{item.quantity.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">{item.description}</td>
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">${item.unitPrice.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">${item.total.toFixed(2)}</td>
+                      <tr key={item.id} className="border-b border-slate-600 print:border-slate-600">
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">{item.quantity.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">{item.description}</td>
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">${item.unitPrice.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">${item.total.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -492,50 +576,50 @@ export default function InvoiceDetailPage() {
               <div className="grid grid-cols-2 gap-6 mb-8">
                 {/* Left Column - Notes */}
                 <div>
-                  <div className="font-semibold text-slate-200 print:text-gray-800 mb-2">Note to recipient(s)</div>
-                  <div className="text-slate-300 print:text-gray-700">Thanks for your business</div>
+                  <div className="font-semibold text-slate-200 print:text-slate-200 mb-2">Note to recipient(s)</div>
+                  <div className="text-slate-300 print:text-slate-300">Thanks for your business</div>
                 </div>
 
                 {/* Right Column - Summary */}
                 <div className="space-y-0">
-                  <div className="flex justify-between px-4 py-2 text-slate-100 print:text-gray-800 border-b border-slate-600 print:border-gray-200">
+                  <div className="flex justify-between px-4 py-2 text-slate-100 print:text-slate-100 border-b border-slate-600 print:border-slate-600">
                     <span>Subtotal:</span>
                     <span>${invoice.subtotal.toFixed(2)}</span>
                   </div>
                   {invoice.discountAmount > 0 && (
-                    <div className="flex justify-between px-4 py-2 text-slate-100 print:text-gray-800 border-b border-slate-600 print:border-gray-200">
+                    <div className="flex justify-between px-4 py-2 text-slate-100 print:text-slate-100 border-b border-slate-600 print:border-slate-600">
                       <span>Discount {invoice.discountCode ? `(${invoice.discountCode})` : ""}:</span>
-                      <span className="text-green-400 print:text-green-600">-${invoice.discountAmount.toFixed(2)}</span>
+                      <span className="text-green-400 print:text-green-400">-${invoice.discountAmount.toFixed(2)}</span>
                     </div>
                   )}
                   {/* Sales Tax - 5% for now, can be made configurable later */}
-                  <div className="flex justify-between px-4 py-2 text-slate-100 print:text-gray-800 border-b border-slate-600 print:border-gray-200">
+                  <div className="flex justify-between px-4 py-2 text-slate-100 print:text-slate-100 border-b border-slate-600 print:border-slate-600">
                     <span>Sales Tax (5%):</span>
                     <span>${(invoice.totalAmount * 0.05).toFixed(2)}</span>
                   </div>
-                  <div className="bg-amber-700 text-white px-4 py-3 font-bold flex justify-between">
+                  <div className="bg-slate-600 text-white px-4 py-3 font-bold flex justify-between print:bg-slate-600">
                     <span>Total (USD)</span>
                     <span>${(invoice.totalAmount * 1.05).toFixed(2)}</span>
                   </div>
                   {invoice.balance < invoice.totalAmount && (
-                    <div className="flex justify-between px-4 py-2 text-sm text-slate-300 print:text-gray-600 border-t border-slate-600 print:border-gray-200">
+                    <div className="flex justify-between px-4 py-2 text-sm text-slate-300 print:text-slate-300 border-t border-slate-600 print:border-slate-600">
                       <span>Total Paid:</span>
                       <span>${(invoice.totalAmount - invoice.balance).toFixed(2)}</span>
                     </div>
                   )}
                   {invoice.balance > 0 && (
-                    <div className="flex justify-between px-4 py-2 text-sm font-semibold text-slate-100 print:text-gray-800 border-t border-slate-600 print:border-gray-200">
+                    <div className="flex justify-between px-4 py-2 text-sm font-semibold text-slate-100 print:text-slate-100 border-t border-slate-600 print:border-slate-600">
                       <span>Balance Due:</span>
-                      <span className="text-red-400 print:text-red-600">${(invoice.balance * 1.05).toFixed(2)}</span>
+                      <span className="text-red-400 print:text-red-400">${(invoice.balance * 1.05).toFixed(2)}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Terms and Conditions */}
-              <div className="mt-8 pt-6 border-t border-slate-600 print:border-gray-200">
-                <div className="font-semibold text-amber-700 mb-2">Terms and Conditions</div>
-                <div className="text-sm text-slate-300 print:text-gray-700 space-y-1">
+              <div className="mt-8 pt-6 border-t border-slate-600 print:border-slate-600">
+                <div className="font-semibold text-slate-200 print:text-slate-200 mb-2">Terms and Conditions</div>
+                <div className="text-sm text-slate-300 print:text-slate-300 space-y-1">
                   <div>Payment is due in 14 days</div>
                   <div>Please make checks payable to: Your Company Inc.</div>
                 </div>
@@ -544,16 +628,16 @@ export default function InvoiceDetailPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-[#1e3a5f] border-slate-700">
           <CardHeader>
             <div>
               <div className="flex flex-row items-center justify-between mb-4">
-                <div>
-                  <CardTitle>Line Items</CardTitle>
-                  <CardDescription>
-                    Items included in this invoice
-                  </CardDescription>
-                </div>
+            <div>
+              <CardTitle className="text-slate-100">Line Items</CardTitle>
+              <CardDescription className="text-slate-300">
+                Items included in this invoice
+              </CardDescription>
+            </div>
               </div>
               {canEdit ? (
                 <div className="flex flex-col gap-4">
@@ -564,7 +648,7 @@ export default function InvoiceDetailPage() {
                         placeholder="Enter discount code (e.g., Save15, FandF)"
                         value={discountCodeInput}
                         onChange={(e) => setDiscountCodeInput(e.target.value.toUpperCase())}
-                        className="max-w-xs"
+                        className="max-w-xs bg-[#0f1e35] border-slate-600 text-slate-100"
                       />
                       {discountCodeInput.trim().length > 0 && discountValidation && (
                         <div className="flex items-center">
@@ -586,7 +670,7 @@ export default function InvoiceDetailPage() {
                               Apply
                             </Button>
                           ) : (
-                            <span className="text-sm text-destructive">
+                            <span className="text-sm text-red-400">
                               {discountValidation.message}
                             </span>
                           )}
@@ -594,7 +678,7 @@ export default function InvoiceDetailPage() {
                       )}
                     </div>
                     {discountValidation?.isValid && (
-                      <p className="text-sm text-green-600 mt-1">
+                      <p className="text-sm text-green-400 mt-1">
                         {discountValidation.discountPercent}% discount available
                       </p>
                     )}
@@ -618,17 +702,17 @@ export default function InvoiceDetailPage() {
                         Add Item
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="bg-[#1e3a5f] border-slate-700">
                       <DialogHeader>
-                        <DialogTitle>Add Line Item</DialogTitle>
-                        <DialogDescription>
+                        <DialogTitle className="text-slate-100">Add Line Item</DialogTitle>
+                        <DialogDescription className="text-slate-300">
                           Add a new line item to this invoice
                         </DialogDescription>
                       </DialogHeader>
                       <form onSubmit={lineItemForm.handleSubmit(handleAddLineItem)} className="space-y-4">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <Label htmlFor="description">Description *</Label>
+                            <Label htmlFor="description" className="text-slate-100">Description *</Label>
                             <Button
                               type="button"
                               variant="outline"
@@ -642,38 +726,41 @@ export default function InvoiceDetailPage() {
                           <Input
                             id="description"
                             {...lineItemForm.register("description")}
+                            className="bg-[#0f1e35] border-slate-600 text-slate-100"
                           />
                           {lineItemForm.formState.errors.description && (
-                            <p className="text-sm text-destructive">
+                            <p className="text-sm text-red-400">
                               {lineItemForm.formState.errors.description.message}
                             </p>
                           )}
                         </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="quantity">Quantity *</Label>
+                        <Label htmlFor="quantity" className="text-slate-100">Quantity *</Label>
                         <Input
                           id="quantity"
                           type="number"
                           step="0.01"
                           {...lineItemForm.register("quantity", { valueAsNumber: true })}
+                          className="bg-[#0f1e35] border-slate-600 text-slate-100"
                         />
                         {lineItemForm.formState.errors.quantity && (
-                          <p className="text-sm text-destructive">
+                          <p className="text-sm text-red-400">
                             {lineItemForm.formState.errors.quantity.message}
                           </p>
                         )}
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="unitPrice">Unit Price *</Label>
+                        <Label htmlFor="unitPrice" className="text-slate-100">Unit Price *</Label>
                         <Input
                           id="unitPrice"
                           type="number"
                           step="0.01"
                           {...lineItemForm.register("unitPrice", { valueAsNumber: true })}
+                          className="bg-[#0f1e35] border-slate-600 text-slate-100"
                         />
                         {lineItemForm.formState.errors.unitPrice && (
-                          <p className="text-sm text-destructive">
+                          <p className="text-sm text-red-400">
                             {lineItemForm.formState.errors.unitPrice.message}
                           </p>
                         )}
@@ -728,22 +815,22 @@ export default function InvoiceDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Quantity</TableHead>
-                    <TableHead className="text-right">Unit Price</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                    <TableHead className="text-slate-100">Description</TableHead>
+                    <TableHead className="text-right text-slate-100">Quantity</TableHead>
+                    <TableHead className="text-right text-slate-100">Unit Price</TableHead>
+                    <TableHead className="text-right text-slate-100">Total</TableHead>
+                    {canEdit && <TableHead className="text-right text-slate-100">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {invoice.lineItems.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell>{item.description}</TableCell>
-                      <TableCell className="text-right">{item.quantity}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-slate-100">{item.description}</TableCell>
+                      <TableCell className="text-right text-slate-100">{item.quantity}</TableCell>
+                      <TableCell className="text-right text-slate-100">
                         ${item.unitPrice.toFixed(2)}
                       </TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-right font-medium text-slate-100">
                         ${item.total.toFixed(2)}
                       </TableCell>
                       {canEdit && (
@@ -768,7 +855,7 @@ export default function InvoiceDetailPage() {
                 </TableBody>
               </Table>
             ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
+              <p className="text-sm text-slate-300 text-center py-4">
                 No line items. {canEdit && "Add items to continue."}
               </p>
             )}
@@ -776,10 +863,10 @@ export default function InvoiceDetailPage() {
         </Card>
 
         {payments && payments.length > 0 && (
-          <Card>
+          <Card className="bg-[#1e3a5f] border-slate-700">
             <CardHeader>
-              <CardTitle>Payments</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-slate-100">Payments</CardTitle>
+              <CardDescription className="text-slate-300">
                 Payment history for this invoice
               </CardDescription>
             </CardHeader>
@@ -787,17 +874,17 @@ export default function InvoiceDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-slate-100">Date</TableHead>
+                    <TableHead className="text-slate-100">Method</TableHead>
+                    <TableHead className="text-right text-slate-100">Amount</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {payments.map((payment) => (
                     <TableRow key={payment.id}>
-                      <TableCell>{formatDate(payment.paymentDate)}</TableCell>
-                      <TableCell>{payment.paymentMethod}</TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-slate-100">{formatDate(payment.paymentDate)}</TableCell>
+                      <TableCell className="text-slate-100">{payment.paymentMethod}</TableCell>
+                      <TableCell className="text-right font-medium text-slate-100">
                         ${payment.amount.toFixed(2)}
                       </TableCell>
                     </TableRow>
@@ -809,10 +896,10 @@ export default function InvoiceDetailPage() {
         )}
 
         {invoice.paymentPlan === "PAY_IN_4" && paymentSchedule && paymentSchedule.length > 0 && (
-          <Card>
+          <Card className="bg-[#1e3a5f] border-slate-700">
             <CardHeader>
-              <CardTitle>Payment Schedule</CardTitle>
-              <CardDescription>
+              <CardTitle className="text-slate-100">Payment Schedule</CardTitle>
+              <CardDescription className="text-slate-300">
                 Installment schedule for Pay in 4 plan
               </CardDescription>
             </CardHeader>
@@ -820,28 +907,28 @@ export default function InvoiceDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Installment</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
+                    <TableHead className="text-slate-100">Installment</TableHead>
+                    <TableHead className="text-slate-100">Due Date</TableHead>
+                    <TableHead className="text-right text-slate-100">Amount</TableHead>
+                    <TableHead className="text-right text-slate-100">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paymentSchedule.map((installment) => (
                     <TableRow key={installment.id}>
-                      <TableCell>#{installment.installmentNumber}</TableCell>
-                      <TableCell>{formatDate(installment.dueDate)}</TableCell>
-                      <TableCell className="text-right font-medium">
+                      <TableCell className="text-slate-100">#{installment.installmentNumber}</TableCell>
+                      <TableCell className="text-slate-100">{formatDate(installment.dueDate)}</TableCell>
+                      <TableCell className="text-right font-medium text-slate-100">
                         ${installment.amount.toFixed(2)}
                       </TableCell>
                       <TableCell className="text-right">
                         <span
                           className={`px-2 py-1 rounded text-xs font-medium ${
                             installment.status === "PAID"
-                              ? "bg-green-100 text-green-800"
+                              ? "bg-green-500/20 text-green-300 border border-green-500/50"
                               : installment.status === "OVERDUE"
-                              ? "bg-red-100 text-red-800"
-                              : "bg-gray-100 text-gray-800"
+                              ? "bg-red-500/20 text-red-300 border border-red-500/50"
+                              : "bg-slate-600 text-slate-200 border border-slate-500"
                           }`}
                         >
                           {installment.status}

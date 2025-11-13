@@ -11,7 +11,7 @@ export const apiClient: AxiosInstance = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 15000, // Increased timeout for slower connections, but still reasonable
+  timeout: 30000, // 30 second timeout - increased for slower connections
 });
 
 /**
@@ -30,19 +30,30 @@ apiClient.interceptors.request.use(
 );
 
 /**
- * Response interceptor: Handle 401 errors (unauthorized).
+ * Response interceptor: Handle 401 and 403 errors (unauthorized/forbidden).
  */
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ErrorResponse>) => {
-    if (error.response?.status === 401) {
+    // Log error for debugging
+    if (error.response) {
+      console.error("API Error:", {
+        status: error.response.status,
+        data: error.response.data,
+        url: error.config?.url,
+      });
+    } else if (error.request) {
+      console.error("Network Error:", error.message);
+    }
+    
+    if (error.response?.status === 401 || error.response?.status === 403) {
       // Clear auth data and redirect to login (only if not on portal pages)
       if (typeof window !== "undefined") {
         const isPortalPage = window.location.pathname.startsWith("/portal");
         localStorage.removeItem("auth_token");
         localStorage.removeItem("auth_user");
         if (!isPortalPage) {
-        window.location.href = "/login";
+          window.location.href = "/login";
         }
       }
     }

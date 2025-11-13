@@ -20,7 +20,7 @@ export function useCustomers(
     queryKey: ["customers", page, size, sortBy],
     queryFn: () => customerService.getAllCustomers(page, size, sortBy),
     placeholderData: (previousData) => previousData, // Show previous data while fetching new data (React Query v5)
-    refetchOnMount: true, // Always refetch when component mounts to ensure fresh data
+    // Removed refetchOnMount: true - rely on staleTime and cache for better performance
   });
 }
 

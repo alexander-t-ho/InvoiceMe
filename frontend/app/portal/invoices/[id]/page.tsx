@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -27,11 +28,18 @@ import {
 import { invoiceService } from "@/lib/services/InvoiceService";
 import { useRecordPortalPayment } from "@/hooks/usePortalPayments";
 import { recordPaymentSchema, type RecordPaymentFormData } from "@/lib/validations/payment";
-import { ArrowLeft, CreditCard, Printer, Cloud } from "lucide-react";
+import { ArrowLeft, CreditCard, Printer } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { InvoiceResponse } from "@/types/api";
+import { usePaymentSchedule } from "@/hooks/usePaymentSchedules";
 import { CreditCardSelector } from "@/components/payments/credit-card-selector";
-import { Meteors } from "@/components/ui/meteors";
+import { DebitCardSelector } from "@/components/payments/debit-card-selector";
+import { BankAccountSelector } from "@/components/payments/bank-account-selector";
+import { CheckDraftForm, type CheckDraftFormData } from "@/components/payments/check-draft-form";
+import { SmallMeteors } from "@/components/ui/small-meteors";
+import { PaymentCountdown } from "@/components/ui/payment-countdown";
+import { MainLayout } from "@/components/layout/main-layout";
+import { ProtectedRoute } from "@/components/auth/protected-route";
 
 function formatDate(dateString: string): string {
   const date = new Date(dateString);
@@ -54,6 +62,12 @@ export default function CustomerInvoiceDetailPage() {
   const [customerEmail, setCustomerEmail] = useState<string>("");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [selectedCreditCardId, setSelectedCreditCardId] = useState<string | null>(null);
+  const [selectedDebitCardId, setSelectedDebitCardId] = useState<string | null>(null);
+  const [selectedBankAccountId, setSelectedBankAccountId] = useState<string | null>(null);
+  const [checkDraftData, setCheckDraftData] = useState<CheckDraftFormData | null>(null);
+
+  // Fetch payment schedule for Pay in 4 invoices
+  const { data: paymentSchedule } = usePaymentSchedule(invoiceId);
 
   const paymentForm = useForm<RecordPaymentFormData>({
     resolver: zodResolver(recordPaymentSchema),
@@ -66,13 +80,52 @@ export default function CustomerInvoiceDetailPage() {
   });
 
   useEffect(() => {
-    // Check if customer is in session
+    // Check for admin authentication first
+    const storedUser = localStorage.getItem("auth_user");
+    let isAdmin = false;
+    
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser.userType === "ADMIN") {
+          isAdmin = true;
+          setCustomerEmail(parsedUser.email || parsedUser.username || "Admin");
+          
+          // Fetch invoice using admin endpoint
+          const fetchInvoice = async () => {
+            try {
+              const data = await invoiceService.getInvoiceById(invoiceId);
+              setInvoice(data);
+              paymentForm.setValue("amount", data.balance);
+            } catch (error: any) {
+              toast({
+                title: "Error",
+                description: error.response?.data?.message || "Failed to load invoice",
+                variant: "destructive",
+              });
+              router.replace("/portal/invoices");
+            } finally {
+              setIsLoading(false);
+            }
+          };
+          
+          fetchInvoice();
+          return;
+        }
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+      }
+    }
+
+    // Check if customer is in session (fallback for customer-only login)
     const storedCustomerId = sessionStorage.getItem("portal_customer_id");
     const storedEmail = sessionStorage.getItem("portal_customer_email");
-    if (!storedCustomerId) {
-      router.push("/portal");
-      return;
-    }
+    
+           if (!storedCustomerId) {
+             router.replace("/login");
+             return;
+           }
+    
     setCustomerId(storedCustomerId);
     setCustomerEmail(storedEmail || "");
 
@@ -83,9 +136,6 @@ export default function CustomerInvoiceDetailPage() {
         const data = await invoiceService.getCustomerInvoiceById(invoiceId, storedCustomerId);
         setInvoice(data);
         
-        // Note: Customer details are not needed here as the invoice already contains customer name
-        // If needed in the future, we can add a public customer endpoint or use the authenticated customer data
-
         // Set default payment amount to remaining balance
         paymentForm.setValue("amount", data.balance);
       } catch (error: any) {
@@ -115,7 +165,7 @@ export default function CustomerInvoiceDetailPage() {
         description: "Customer ID is required. Please log in again.",
         variant: "destructive",
       });
-      router.push("/portal");
+      router.replace("/login");
       return;
     }
     
@@ -129,10 +179,43 @@ export default function CustomerInvoiceDetailPage() {
       return;
     }
     
+    // If debit card is selected, validate that a card is chosen
+    if (data.paymentMethod === "DEBIT_CARD" && !selectedDebitCardId) {
+      toast({
+        title: "Error",
+        description: "Please select a debit card to continue",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // If bank transfer is selected, validate that an account is chosen
+    if (data.paymentMethod === "BANK_TRANSFER" && !selectedBankAccountId) {
+      toast({
+        title: "Error",
+        description: "Please select a checking account to continue",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // If check is selected, validate that check is drafted
+    if (data.paymentMethod === "CHECK" && !checkDraftData) {
+      toast({
+        title: "Error",
+        description: "Please draft the check to continue",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     recordPayment.mutate(data, {
       onSuccess: () => {
         setPaymentDialogOpen(false);
         setSelectedCreditCardId(null);
+        setSelectedDebitCardId(null);
+        setSelectedBankAccountId(null);
+        setCheckDraftData(null);
         // Refresh invoice data using the customer portal endpoint
         invoiceService.getCustomerInvoiceById(invoiceId, customerId).then(setInvoice);
       },
@@ -145,14 +228,26 @@ export default function CustomerInvoiceDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <LoadingSpinner size="lg" />
-      </div>
+      <ProtectedRoute>
+        <MainLayout>
+          <div className="flex items-center justify-center py-12">
+            <LoadingSpinner size="lg" />
+          </div>
+        </MainLayout>
+      </ProtectedRoute>
     );
   }
 
   if (!invoice) {
-    return null;
+    return (
+      <ProtectedRoute>
+        <MainLayout>
+          <div className="flex items-center justify-center py-12">
+            <LoadingSpinner size="lg" />
+          </div>
+        </MainLayout>
+      </ProtectedRoute>
+    );
   }
 
   const canMakePayment = invoice.status === "SENT" && invoice.balance > 0;
@@ -160,39 +255,29 @@ export default function CustomerInvoiceDetailPage() {
   const paymentTerms = invoice.paymentPlan === "PAY_IN_4" ? "Pay in 4 installments" : "Due on receipt";
 
   return (
-    <div className="min-h-screen bg-[#0f1e35] p-4 print:bg-white print:p-0 relative">
-      <div className="max-w-4xl mx-auto relative z-10">
-        {/* Back button - hidden on print */}
-        <div className="mb-4 print:hidden">
-          <Button
-            variant="outline"
-            onClick={() => router.push("/portal/invoices")}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Invoices
-          </Button>
-        </div>
-
+    <ProtectedRoute>
+      <MainLayout>
+        <div className="max-w-4xl mx-auto print:max-w-none">
         {/* Invoice Card */}
-        <div className="bg-[#1e3a5f] rounded-lg shadow-lg p-8 print:bg-white print:shadow-none border border-slate-700">
+        <div className="bg-[#1e3a5f] rounded-lg shadow-lg p-8 print:bg-[#0f1e35] print:shadow-none border border-slate-700">
           {/* Header */}
-          <div className="flex items-start justify-between mb-8 pb-6 border-b border-slate-600 print:border-gray-200">
+          <div className="flex items-start justify-between mb-8 pb-6 border-b border-slate-600 print:border-slate-600">
             {/* Left: Company Info */}
             <div>
-              <div className="text-xl font-bold text-slate-100 print:text-gray-900 mb-1">Your Company Inc.</div>
-              <div className="text-sm text-slate-300 print:text-gray-700 space-y-0.5">
+              <div className="text-xl font-bold text-slate-100 print:text-slate-100 mb-1">Your Company Inc.</div>
+              <div className="text-sm text-slate-300 print:text-slate-300 space-y-0.5">
                 <div>1234 Company St.</div>
                 <div>Company Town, ST 12345</div>
               </div>
             </div>
             
-            {/* Right: Cloud Icon and INVOICE Title */}
+            {/* Right: Small Meteors and INVOICE Title */}
             <div className="flex flex-col items-end">
-              {/* Cloud Icon Box */}
-              <div className="border border-amber-700 w-24 h-24 mb-4 flex items-center justify-center bg-amber-50 print:bg-amber-50">
-                <Cloud className="h-8 w-8 text-amber-700" />
+              {/* Small Meteors Box */}
+              <div className="border border-slate-500 w-24 h-24 mb-4 flex items-center justify-center bg-[#0f1e35] print:bg-[#0f1e35] relative overflow-hidden">
+                <SmallMeteors number={8} />
               </div>
-              <div className="text-5xl font-bold text-amber-700">INVOICE</div>
+              <div className="text-5xl font-bold text-slate-200 print:text-slate-200">INVOICE</div>
             </div>
           </div>
 
@@ -200,44 +285,51 @@ export default function CustomerInvoiceDetailPage() {
           <div className="grid grid-cols-2 gap-6 mb-8">
             {/* Left Column - Bill To */}
             <div>
-              <div className="font-semibold text-slate-200 print:text-gray-800 mb-2">Bill To</div>
-              <div className="font-semibold text-slate-100 print:text-gray-900 mb-1">{invoice.customerName}</div>
-              <div className="text-sm text-slate-300 print:text-gray-700">
+              <div className="font-semibold text-slate-200 print:text-slate-200 mb-2">Bill To</div>
+              <div className="font-semibold text-slate-100 print:text-slate-100 mb-1">{invoice.customerName}</div>
+              <div className="text-sm text-slate-300 print:text-slate-300">
                 {customerEmail || "1234 Customer St,"}
               </div>
-              <div className="text-sm text-slate-300 print:text-gray-700">Customer Town, ST 12345</div>
+              <div className="text-sm text-slate-300 print:text-slate-300">Customer Town, ST 12345</div>
             </div>
 
             {/* Right Column - Invoice Details */}
             <div className="space-y-0">
-              <div className="bg-amber-700 text-white px-4 py-2 font-semibold text-sm">
+              <div className="bg-slate-600 text-white px-4 py-2 font-semibold text-sm print:bg-slate-600">
                 Invoice #
               </div>
-              <div className="bg-[#2a4d75] print:bg-white border-x border-b border-slate-600 print:border-gray-200 px-4 py-2 text-slate-100 print:text-gray-800">
+              <div className="bg-[#2a4d75] print:bg-[#1e3a5f] border-x border-b border-slate-600 print:border-slate-600 px-4 py-2 text-slate-100 print:text-slate-100">
                 {invoiceNumber}
               </div>
               
-              <div className="bg-amber-700 text-white px-4 py-2 font-semibold text-sm">
+              <div className="bg-slate-600 text-white px-4 py-2 font-semibold text-sm print:bg-slate-600">
                 Invoice date
               </div>
-              <div className="bg-[#2a4d75] print:bg-white border-x border-b border-slate-600 print:border-gray-200 px-4 py-2 text-slate-100 print:text-gray-800">
+              <div className="bg-[#2a4d75] print:bg-[#1e3a5f] border-x border-b border-slate-600 print:border-slate-600 px-4 py-2 text-slate-100 print:text-slate-100">
                 {formatDate(invoice.issueDate)}
               </div>
               
-              <div className="bg-amber-700 text-white px-4 py-2 font-semibold text-sm">
+              <div className="bg-slate-600 text-white px-4 py-2 font-semibold text-sm print:bg-slate-600">
                 Due date
               </div>
-              <div className="bg-[#2a4d75] print:bg-white border-x border-b border-slate-600 print:border-gray-200 px-4 py-2 text-slate-100 print:text-gray-800">
+              <div className="bg-[#2a4d75] print:bg-[#1e3a5f] border-x border-b border-slate-600 print:border-slate-600 px-4 py-2 text-slate-100 print:text-slate-100">
                 {formatDate(invoice.dueDate)}
               </div>
             </div>
           </div>
 
+          {/* Payment Countdown */}
+          {invoice.status !== "PAID" && (
+            <div className="mb-6">
+              <PaymentCountdown dueDate={invoice.dueDate} status={invoice.status} />
+            </div>
+          )}
+
           {/* Line Items Table */}
           <div className="mb-8">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-amber-700 text-white">
+                <tr className="bg-slate-600 text-white print:bg-slate-600">
                   <th className="text-left px-4 py-3 font-semibold text-sm">QTY</th>
                   <th className="text-left px-4 py-3 font-semibold text-sm">Description</th>
                   <th className="text-left px-4 py-3 font-semibold text-sm">Unit Price</th>
@@ -246,11 +338,11 @@ export default function CustomerInvoiceDetailPage() {
               </thead>
                   <tbody>
                     {invoice.lineItems.map((item) => (
-                      <tr key={item.id} className="border-b border-slate-600 print:border-gray-200">
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">{item.quantity.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">{item.description}</td>
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">${item.unitPrice.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-slate-100 print:text-gray-800">${item.total.toFixed(2)}</td>
+                      <tr key={item.id} className="border-b border-slate-600 print:border-slate-600">
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">{item.quantity.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">{item.description}</td>
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">${item.unitPrice.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-slate-100 print:text-slate-100">${item.total.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -261,50 +353,50 @@ export default function CustomerInvoiceDetailPage() {
           <div className="grid grid-cols-2 gap-6 mb-8">
             {/* Left Column - Notes */}
             <div>
-              <div className="font-semibold text-slate-200 print:text-gray-800 mb-2">Note to recipient(s)</div>
-              <div className="text-slate-300 print:text-gray-700">Thanks for your business</div>
+              <div className="font-semibold text-slate-200 print:text-slate-200 mb-2">Note to recipient(s)</div>
+              <div className="text-slate-300 print:text-slate-300">Thanks for your business</div>
             </div>
 
             {/* Right Column - Summary */}
             <div className="space-y-0">
-              <div className="flex justify-between px-4 py-2 text-slate-100 print:text-gray-800 border-b border-slate-600 print:border-gray-200">
+              <div className="flex justify-between px-4 py-2 text-slate-100 print:text-slate-100 border-b border-slate-600 print:border-slate-600">
                 <span>Subtotal:</span>
                 <span>${invoice.subtotal.toFixed(2)}</span>
               </div>
               {invoice.discountAmount > 0 && (
-                <div className="flex justify-between px-4 py-2 text-slate-100 print:text-gray-800 border-b border-slate-600 print:border-gray-200">
+                <div className="flex justify-between px-4 py-2 text-slate-100 print:text-slate-100 border-b border-slate-600 print:border-slate-600">
                   <span>Discount {invoice.discountCode ? `(${invoice.discountCode})` : ""}:</span>
-                  <span className="text-green-400 print:text-green-600">-${invoice.discountAmount.toFixed(2)}</span>
+                  <span className="text-green-400 print:text-green-400">-${invoice.discountAmount.toFixed(2)}</span>
                 </div>
               )}
               {/* Sales Tax - 5% for now, can be made configurable later */}
-              <div className="flex justify-between px-4 py-2 text-slate-100 print:text-gray-800 border-b border-slate-600 print:border-gray-200">
+              <div className="flex justify-between px-4 py-2 text-slate-100 print:text-slate-100 border-b border-slate-600 print:border-slate-600">
                 <span>Sales Tax (5%):</span>
                 <span>${(invoice.totalAmount * 0.05).toFixed(2)}</span>
               </div>
-              <div className="bg-amber-700 text-white px-4 py-3 font-bold flex justify-between">
+              <div className="bg-slate-600 text-white px-4 py-3 font-bold flex justify-between print:bg-slate-600">
                 <span>Total (USD)</span>
                 <span>${(invoice.totalAmount * 1.05).toFixed(2)}</span>
               </div>
               {invoice.balance < invoice.totalAmount && (
-                <div className="flex justify-between px-4 py-2 text-sm text-slate-300 print:text-gray-600 border-t border-slate-600 print:border-gray-200">
+                <div className="flex justify-between px-4 py-2 text-sm text-slate-300 print:text-slate-300 border-t border-slate-600 print:border-slate-600">
                   <span>Total Paid:</span>
                   <span>${(invoice.totalAmount - invoice.balance).toFixed(2)}</span>
                 </div>
               )}
               {invoice.balance > 0 && (
-                <div className="flex justify-between px-4 py-2 text-sm font-semibold text-slate-100 print:text-gray-800 border-t border-slate-600 print:border-gray-200">
+                <div className="flex justify-between px-4 py-2 text-sm font-semibold text-slate-100 print:text-slate-100 border-t border-slate-600 print:border-slate-600">
                   <span>Balance Due:</span>
-                  <span className="text-red-400 print:text-red-600">${(invoice.balance * 1.05).toFixed(2)}</span>
+                  <span className="text-red-400 print:text-red-400">${(invoice.balance * 1.05).toFixed(2)}</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Terms and Conditions */}
-          <div className="mt-8 pt-6 border-t border-slate-600 print:border-gray-200">
-            <div className="font-semibold text-amber-700 mb-2">Terms and Conditions</div>
-            <div className="text-sm text-slate-300 print:text-gray-700 space-y-1">
+          <div className="mt-8 pt-6 border-t border-slate-600 print:border-slate-600">
+            <div className="font-semibold text-slate-200 print:text-slate-200 mb-2">Terms and Conditions</div>
+            <div className="text-sm text-slate-300 print:text-slate-300 space-y-1">
               <div>Payment is due in 14 days</div>
               <div>Please make checks payable to: Your Company Inc.</div>
             </div>
@@ -320,7 +412,7 @@ export default function CustomerInvoiceDetailPage() {
                       Pay Invoice
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className={paymentForm.watch("paymentMethod") === "CREDIT_CARD" ? "max-w-2xl" : ""}>
+                  <DialogContent className={(paymentForm.watch("paymentMethod") === "CREDIT_CARD" || paymentForm.watch("paymentMethod") === "DEBIT_CARD" || paymentForm.watch("paymentMethod") === "BANK_TRANSFER" || paymentForm.watch("paymentMethod") === "CHECK") ? "max-w-2xl" : ""}>
                     <DialogHeader>
                       <DialogTitle>Record Payment</DialogTitle>
                       <DialogDescription>
@@ -368,6 +460,15 @@ export default function CustomerInvoiceDetailPage() {
                             if (value !== "CREDIT_CARD") {
                               setSelectedCreditCardId(null);
                             }
+                            if (value !== "DEBIT_CARD") {
+                              setSelectedDebitCardId(null);
+                            }
+                            if (value !== "BANK_TRANSFER") {
+                              setSelectedBankAccountId(null);
+                            }
+                            if (value !== "CHECK") {
+                              setCheckDraftData(null);
+                            }
                           }}
                         >
                           <SelectTrigger>
@@ -405,6 +506,49 @@ export default function CustomerInvoiceDetailPage() {
                         </div>
                       )}
                       
+                      {/* Debit Card Selection - Only show when Debit Card is selected */}
+                      {paymentForm.watch("paymentMethod") === "DEBIT_CARD" && invoice && (
+                        <div className="space-y-2 border-t pt-4">
+                          <DebitCardSelector
+                            selectedCardId={selectedDebitCardId}
+                            onSelectCard={setSelectedDebitCardId}
+                            userName={invoice.customerName}
+                          />
+                          {!selectedDebitCardId && (
+                            <p className="text-sm text-destructive">
+                              Please select a debit card to continue
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Bank Account Selection - Only show when Bank Transfer is selected */}
+                      {paymentForm.watch("paymentMethod") === "BANK_TRANSFER" && invoice && (
+                        <div className="space-y-2 border-t pt-4">
+                          <BankAccountSelector
+                            selectedAccountId={selectedBankAccountId}
+                            onSelectAccount={setSelectedBankAccountId}
+                            userName={invoice.customerName}
+                          />
+                          {!selectedBankAccountId && (
+                            <p className="text-sm text-destructive">
+                              Please select a checking account to continue
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Check Draft Form - Only show when Check is selected */}
+                      {paymentForm.watch("paymentMethod") === "CHECK" && invoice && (
+                        <CheckDraftForm
+                          amount={paymentForm.watch("amount") || 0}
+                          payeeName={invoice.customerName}
+                          onDraftComplete={setCheckDraftData}
+                          isDrafted={!!checkDraftData}
+                          draftedData={checkDraftData}
+                        />
+                      )}
+                      
                       <DialogFooter>
                         <Button
                           type="button"
@@ -412,6 +556,9 @@ export default function CustomerInvoiceDetailPage() {
                           onClick={() => {
                             setPaymentDialogOpen(false);
                             setSelectedCreditCardId(null);
+                            setSelectedDebitCardId(null);
+                            setSelectedBankAccountId(null);
+                            setCheckDraftData(null);
                           }}
                         >
                           Cancel
@@ -420,7 +567,10 @@ export default function CustomerInvoiceDetailPage() {
                           type="submit" 
                           disabled={
                             recordPayment.isPending || 
-                            (paymentForm.watch("paymentMethod") === "CREDIT_CARD" && !selectedCreditCardId)
+                            (paymentForm.watch("paymentMethod") === "CREDIT_CARD" && !selectedCreditCardId) ||
+                            (paymentForm.watch("paymentMethod") === "DEBIT_CARD" && !selectedDebitCardId) ||
+                            (paymentForm.watch("paymentMethod") === "BANK_TRANSFER" && !selectedBankAccountId) ||
+                            (paymentForm.watch("paymentMethod") === "CHECK" && !checkDraftData)
                           }
                         >
                           {recordPayment.isPending ? (
@@ -448,24 +598,68 @@ export default function CustomerInvoiceDetailPage() {
             </Button>
           </div>
 
+          {/* Payment Schedule - Only show for Pay in 4 invoices */}
+          {invoice.paymentPlan === "PAY_IN_4" && paymentSchedule && paymentSchedule.length > 0 && (
+            <div className="mt-8 pt-6 border-t border-slate-600 print:border-slate-600">
+              <h3 className="font-semibold text-slate-100 print:text-slate-100 mb-2">Payment Schedule</h3>
+              <p className="text-sm text-slate-300 print:text-slate-300 mb-4">
+                This invoice is set up for Pay in 4 installments. See the schedule below:
+              </p>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-700 print:bg-slate-600">
+                    <th className="text-left px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Installment</th>
+                    <th className="text-left px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Due Date</th>
+                    <th className="text-right px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Amount</th>
+                    <th className="text-right px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentSchedule.map((installment) => (
+                    <tr key={installment.id} className="border-b border-slate-600 print:border-slate-600">
+                      <td className="px-4 py-2 text-slate-100 print:text-slate-100">#{installment.installmentNumber}</td>
+                      <td className="px-4 py-2 text-slate-100 print:text-slate-100">{formatDate(installment.dueDate)}</td>
+                      <td className="px-4 py-2 text-right text-slate-100 print:text-slate-100 font-medium">
+                        ${installment.amount.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-2 text-right text-slate-100 print:text-slate-100">
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            installment.status === "PAID"
+                              ? "bg-green-500/20 text-green-300 border border-green-500/50"
+                              : installment.status === "OVERDUE"
+                              ? "bg-red-500/20 text-red-300 border border-red-500/50"
+                              : "bg-slate-600 text-slate-200 border border-slate-500"
+                          }`}
+                        >
+                          {installment.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {/* Payment History */}
           {invoice.payments.length > 0 && (
-            <div className="mt-8 pt-6 border-t border-slate-600 print:border-gray-200">
-              <h3 className="font-semibold text-slate-100 print:text-gray-800 mb-4">Payment History</h3>
+            <div className="mt-8 pt-6 border-t border-slate-600 print:border-slate-600">
+              <h3 className="font-semibold text-slate-100 print:text-slate-100 mb-4">Payment History</h3>
               <table className="w-full border-collapse">
                     <thead>
-                      <tr className="bg-slate-700 print:bg-gray-100">
-                        <th className="text-left px-4 py-2 font-semibold text-sm text-slate-100 print:text-gray-700">Date</th>
-                        <th className="text-left px-4 py-2 font-semibold text-sm text-slate-100 print:text-gray-700">Method</th>
-                        <th className="text-right px-4 py-2 font-semibold text-sm text-slate-100 print:text-gray-700">Amount</th>
+                      <tr className="bg-slate-700 print:bg-slate-600">
+                        <th className="text-left px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Date</th>
+                        <th className="text-left px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Method</th>
+                        <th className="text-right px-4 py-2 font-semibold text-sm text-slate-100 print:text-slate-100">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {invoice.payments.map((payment) => (
-                        <tr key={payment.id} className="border-b border-slate-600 print:border-gray-200">
-                          <td className="px-4 py-2 text-slate-100 print:text-gray-800">{formatDate(payment.paymentDate)}</td>
-                          <td className="px-4 py-2 text-slate-100 print:text-gray-800">{payment.paymentMethod}</td>
-                          <td className="px-4 py-2 text-right text-slate-100 print:text-gray-800 font-medium">
+                        <tr key={payment.id} className="border-b border-slate-600 print:border-slate-600">
+                          <td className="px-4 py-2 text-slate-100 print:text-slate-100">{formatDate(payment.paymentDate)}</td>
+                          <td className="px-4 py-2 text-slate-100 print:text-slate-100">{payment.paymentMethod}</td>
+                          <td className="px-4 py-2 text-right text-slate-100 print:text-slate-100 font-medium">
                             ${payment.amount.toFixed(2)}
                           </td>
                         </tr>
@@ -475,8 +669,9 @@ export default function CustomerInvoiceDetailPage() {
             </div>
           )}
         </div>
-      </div>
-    </div>
+        </div>
+      </MainLayout>
+    </ProtectedRoute>
   );
 }
 

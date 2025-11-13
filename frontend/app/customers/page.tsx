@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useCustomers } from "@/hooks/useCustomers";
 import { useDeleteCustomer } from "@/hooks/useCustomers";
 import { Button } from "@/components/ui/button";
+import { prefetchRouteData } from "@/lib/prefetch-enhanced";
 import {
   Table,
   TableBody,
@@ -16,8 +18,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { Plus, Edit, Trash2 } from "lucide-react";
+import { Plus, Edit, Trash2, Eye } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +32,7 @@ import {
 import { useRouter } from "next/navigation";
 
 export default function CustomersPage() {
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
@@ -53,15 +57,9 @@ export default function CustomersPage() {
     }
   };
 
-  if (isLoading) {
-    return (
-      <MainLayout>
-        <div className="flex items-center justify-center py-12">
-          <LoadingSpinner size="lg" />
-        </div>
-      </MainLayout>
-    );
-  }
+  // Optimistic rendering - show page structure immediately, data loads in background
+  // Only show full loading if we have no cached data
+  const showFullLoading = isLoading && !data;
 
   if (error) {
     return (
@@ -78,6 +76,26 @@ export default function CustomersPage() {
     );
   }
 
+  if (showFullLoading) {
+    return (
+      <ProtectedRoute>
+        <MainLayout>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight">Customers</h1>
+                <p className="text-muted-foreground">
+                  Manage your customers
+                </p>
+              </div>
+            </div>
+            <TableSkeleton rows={10} cols={4} />
+          </div>
+        </MainLayout>
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <MainLayout>
@@ -89,13 +107,19 @@ export default function CustomersPage() {
               Manage your customers
             </p>
           </div>
-          <Link href="/customers/new">
+          <Link href="/customers/new" prefetch={true}>
             <Button>
               <Plus className="mr-2 h-4 w-4" />
               New Customer
             </Button>
           </Link>
         </div>
+
+        {isLoading && data && (
+          <div className="rounded-md border">
+            <TableSkeleton rows={5} cols={4} />
+          </div>
+        )}
 
         {data && data.content.length > 0 ? (
           <>
@@ -119,7 +143,21 @@ export default function CustomersPage() {
                       <TableCell>{customer.address || "-"}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end space-x-2">
-                          <Link href={`/customers/${customer.id}`}>
+                          <Link 
+                            href={`/customers/${customer.id}`} 
+                            prefetch={true}
+                            onMouseEnter={() => prefetchRouteData(queryClient, `/customers/${customer.id}`)}
+                          >
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-4 w-4 mr-1" />
+                              View Details
+                            </Button>
+                          </Link>
+                          <Link 
+                            href={`/customers/${customer.id}?edit=true`} 
+                            prefetch={true}
+                            onMouseEnter={() => prefetchRouteData(queryClient, `/customers/${customer.id}`)}
+                          >
                             <Button variant="outline" size="sm">
                               <Edit className="h-4 w-4" />
                             </Button>
