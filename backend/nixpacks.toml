@@ -1,15 +1,16 @@
 # NIXPACKS configuration for Railway
 # This ensures Railway uses NIXPACKS builder correctly
+# Note: This file is in the backend directory, so paths are relative to backend/
 
 [phases.setup]
 nixPkgs = ["gradle_8", "jdk17"]
 
 [phases.install]
-cmds = ["cd backend && ./gradlew build -x test"]
+cmds = ["./gradlew build -x test"]
 
 [phases.build]
-cmds = ["cd backend && ./gradlew build -x test"]
+cmds = ["./gradlew build -x test"]
 
 [start]
-cmd = "cd backend && java -jar build/libs/invoiceme-backend-0.0.1-SNAPSHOT.jar"
+cmd = "java -jar build/libs/invoiceme-backend-0.0.1-SNAPSHOT.jar"
 

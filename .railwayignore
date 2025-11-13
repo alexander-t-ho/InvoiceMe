@@ -1,8 +1,6 @@
-# Railway ignore file
-# Files listed here won't affect Railway builds
-
 # Ignore Dockerfiles - Railway should use NIXPACKS
+**/Dockerfile
+**/Dockerfile.*
 backend/Dockerfile.local
+backend/Dockerfile.railway-disabled
 frontend/Dockerfile
-
-
